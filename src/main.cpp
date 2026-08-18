@@ -12,6 +12,9 @@ TwoWire* activeWire = &Wire;
 const char* activeWireName = "Wire";
 
 const uint32_t WIFI_RETRY_DELAY_MS = 500;
+const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
+const uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
+const uint32_t SERIAL_WAIT_TIMEOUT_MS = 2000;
 const uint32_t SENSOR_INIT_DELAY_MS = 1000;
 const uint32_t SENSOR_WAKE_DELAY_MS = 30;
 const uint32_t MEASUREMENT_INTERVAL_MS = 5000;
@@ -107,6 +110,28 @@ void haltWithDelay() {
   }
 }
 
+bool waitForSerial(uint32_t timeoutMs) {
+  unsigned long start = millis();
+  while (!Serial && millis() - start < timeoutMs) {
+    delay(10);
+  }
+  return static_cast<bool>(Serial);
+}
+
+bool connectWiFi(uint32_t timeoutMs) {
+  if (WiFi.status() == WL_CONNECTED) {
+    return true;
+  }
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+    delay(WIFI_RETRY_DELAY_MS);
+    Serial.print('.');
+  }
+  return WiFi.status() == WL_CONNECTED;
+}
+
 bool initializeSCD4x(TwoWire& bus, const char* busName) {
   bus.begin();
   bus.setClock(100000);
@@ -141,21 +166,19 @@ bool initializeSCD4x(TwoWire& bus, const char* busName) {
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) {
-    delay(10);
-  }
+  waitForSerial(SERIAL_WAIT_TIMEOUT_MS);
 
   Serial.print("Connecting to ");
   Serial.println(WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(WIFI_RETRY_DELAY_MS);
-    Serial.print('.');
-  }
+  bool wifiConnected = connectWiFi(WIFI_CONNECT_TIMEOUT_MS);
   Serial.println();
-  Serial.print("Webseite: http://");
-  Serial.println(WiFi.localIP());
-  server.begin();
+  if (wifiConnected) {
+    Serial.print("Webseite: http://");
+    Serial.println(WiFi.localIP());
+    server.begin();
+  } else {
+    Serial.println("WiFi not connected yet, starting in offline mode.");
+  }
 
   Serial.println("Initializing SCD4x...");
   bool sensorReady = false;
@@ -177,6 +200,22 @@ void setup() {
 }
 
 void loop() {
+  static unsigned long lastReconnectAttempt = 0;
+  if (WiFi.status() != WL_CONNECTED &&
+      millis() - lastReconnectAttempt >= WIFI_RECONNECT_INTERVAL_MS) {
+    lastReconnectAttempt = millis();
+    Serial.println("Reconnecting WiFi...");
+    if (connectWiFi(WIFI_CONNECT_TIMEOUT_MS)) {
+      Serial.println();
+      Serial.print("Webseite: http://");
+      Serial.println(WiFi.localIP());
+      server.begin();
+    } else {
+      Serial.println();
+      Serial.println("WiFi reconnect timed out.");
+    }
+  }
+
   handleHttpClient();
   if (millis() - lastMeasurement < MEASUREMENT_INTERVAL_MS) {
     return;
