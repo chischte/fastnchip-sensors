@@ -40,7 +40,14 @@ SERIES = [
     {"col": "humidity_rh",   "label": "Humidity",     "unit": "%RH", "color": "#3b8c62", "ymin": 85, "ymax": 100,   "step": 5,    "fmt": ".1f"},
 ]
 
-_state = {"show_24h": False}
+_state = {"range": "all"}   # "all" | "40d" | "24h" | "30m"
+
+RANGES = [
+    ("all", "all data",    None),
+    ("40d", "40 days",     timedelta(days=40)),
+    ("24h", "24 hours",    timedelta(hours=24)),
+    ("30m", "30 minutes",  timedelta(minutes=30)),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -54,10 +61,11 @@ def load_data() -> pd.DataFrame:
 
 
 def filter_data(df: pd.DataFrame) -> pd.DataFrame:
-    if _state["show_24h"]:
-        cutoff = df["timestamp"].max() - timedelta(hours=24)
-        return df[df["timestamp"] >= cutoff]
-    return df
+    delta = next(d for k, _, d in RANGES if k == _state["range"])
+    if delta is None:
+        return df
+    cutoff = df["timestamp"].max() - delta
+    return df[df["timestamp"] >= cutoff]
 
 
 # ---------------------------------------------------------------------------
@@ -79,13 +87,19 @@ def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
             if "\n" in label.get_text():
                 label.set_fontweight("bold")
 
-    if _state["show_24h"]:
+    if _state["range"] == "24h":
         ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
         ax.xaxis.set_major_formatter(plt.FuncFormatter(_fmt_with_midnight))
         t_max = df["timestamp"].max()
         ax.set_xlim(mdates.date2num(t_max - timedelta(hours=24)), mdates.date2num(t_max))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
         _bold_midnight()
+    elif _state["range"] == "30m":
+        ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5)))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        t_max = df["timestamp"].max()
+        ax.set_xlim(mdates.date2num(t_max - timedelta(minutes=30)), mdates.date2num(t_max))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
     elif span < 3600:
         ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5)))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
@@ -163,46 +177,54 @@ def draw_value_boxes(box_axes: list, last: pd.Series) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Toggle switch (drawn on a dedicated axes)
+# Checkboxes (radio-style: one selected at a time)
 # ---------------------------------------------------------------------------
 
-def draw_toggle(toggle_ax: "plt.Axes") -> None:
-    toggle_ax.clear()
-    # Fixed data coords: width=10, height=1 — aspect is controlled by add_axes size
-    toggle_ax.set_xlim(0, 10)
-    toggle_ax.set_ylim(0, 1)
-    toggle_ax.set_aspect("auto")
-    toggle_ax.axis("off")
+def draw_checkboxes(cb_ax: "plt.Axes") -> None:
+    cb_ax.clear()
+    cb_ax.set_xlim(0, 1)
+    cb_ax.set_ylim(0, 1)
+    cb_ax.axis("off")
 
-    on = _state["show_24h"]
-    track_color = BTN_ON if on else BTN_OFF
+    # Outer card — clip_on=False so border is fully visible
+    card = FancyBboxPatch((0.01, 0.08), 0.98, 0.84,
+                          boxstyle="round,pad=0.02",
+                          linewidth=1, edgecolor=COLOR_BORDER,
+                          facecolor=BG_CARD,
+                          transform=cb_ax.transAxes, zorder=1,
+                          clip_on=False)
+    cb_ax.add_patch(card)
 
-    # Track: x=3..7, y=0.2..0.8
-    track = FancyBboxPatch((3.0, 0.20), 4.0, 0.60,
-                           boxstyle="round,pad=0.12",
-                           linewidth=0, facecolor=track_color,
-                           zorder=1)
-    toggle_ax.add_patch(track)
+    n = len(RANGES)
+    margin = 0.10
+    slot_w = (1 - 2 * margin) / n
+    box_w  = 0.022
 
-    # Knob: a square-ish patch so it looks like a round pill knob
-    kx = 5.8 if on else 3.2
-    knob = FancyBboxPatch((kx - 0.55, 0.22), 1.1, 0.56,
-                          boxstyle="round,pad=0.10",
-                          linewidth=0, facecolor="white", zorder=2)
-    toggle_ax.add_patch(knob)
+    for i, (key, label, _) in enumerate(RANGES):
+        cx = margin + (i + 0.5) * slot_w
+        selected = _state["range"] == key
 
-    # Labels
-    col_all = "#2a3630" if not on else "#9aada6"
-    col_24h = "#2a3630" if on     else "#9aada6"
-    fw_all  = "bold"    if not on else "normal"
-    fw_24h  = "bold"    if on     else "normal"
+        # Fixed positions that look centred: box at y=0.38..0.66, label centre at 0.22
+        box_h   = 0.28
+        box_y   = 0.38
+        label_y = 0.22   # text centre (va=center)
 
-    toggle_ax.text(2.2, 0.50, "All", ha="right", va="center",
-                   fontsize=9, color=col_all, fontweight=fw_all)
-    toggle_ax.text(7.3, 0.50, "24 h", ha="left", va="center",
-                   fontsize=9, color=col_24h, fontweight=fw_24h)
+        rect = FancyBboxPatch((cx - box_w / 2, box_y), box_w, box_h,
+                              boxstyle="round,pad=0.003",
+                              linewidth=1.2,
+                              edgecolor=BTN_ON if selected else "#9aada6",
+                              facecolor=BTN_ON if selected else BG_PAGE,
+                              transform=cb_ax.transAxes, zorder=2,
+                              clip_on=False)
+        cb_ax.add_patch(rect)
 
-    toggle_ax.figure.canvas.draw_idle()
+        cb_ax.text(cx, label_y, label,
+                   ha="center", va="center", fontsize=8,
+                   color="#2a3630" if selected else "#607068",
+                   fontweight="bold" if selected else "normal",
+                   transform=cb_ax.transAxes, zorder=2)
+
+    cb_ax.figure.canvas.draw_idle()
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +232,7 @@ def draw_toggle(toggle_ax: "plt.Axes") -> None:
 # ---------------------------------------------------------------------------
 
 def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
-         toggle_ax: "plt.Axes", footer_text: "plt.Text") -> None:
+         cb_ax: "plt.Axes", footer_text: "plt.Text") -> None:
     try:
         df_all = load_data()
     except Exception as exc:
@@ -227,7 +249,7 @@ def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
     draw_value_boxes(box_axes, last)
     for ax, s in zip(chart_axes, SERIES):
         plot_series(ax, df, s)
-    draw_toggle(toggle_ax)
+    draw_checkboxes(cb_ax)
 
     footer_text.set_text(
         f"Last Reading:  {ts.strftime('%A, %d %B %Y')}  {ts.strftime('%H:%M:%S')}"
@@ -275,28 +297,31 @@ def main() -> None:
     # Charts
     chart_axes = [fig.add_subplot(gs_charts[r]) for r in range(3)]
 
-    # Toggle: fixed-size axes so it is never distorted
-    toggle_ax = fig.add_axes([0.43, 0.055, 0.14, 0.048])
+    # Checkboxes: fixed-size axes at the bottom centre
+    cb_ax = fig.add_axes([0.28, 0.030, 0.44, 0.060])
 
     # Footer text at very bottom
     footer_text = fig.text(
-        0.5, 0.012, "",
+        0.5, 0.008, "",
         ha="center", va="bottom",
         fontsize=8, color="#607068", fontfamily="monospace",
     )
 
-    draw(fig, box_axes, chart_axes, toggle_ax, footer_text)
+    draw(fig, box_axes, chart_axes, cb_ax, footer_text)
 
-    # Click on toggle_ax flips state
+    # Click on a checkbox selects that range
     def _on_click(event):
-        if event.inaxes is toggle_ax:
-            _state["show_24h"] = not _state["show_24h"]
-            draw(fig, box_axes, chart_axes, toggle_ax, footer_text)
+        if event.inaxes is cb_ax and event.xdata is not None:
+            n = len(RANGES)
+            idx = int(event.xdata * n)
+            idx = max(0, min(n - 1, idx))
+            _state["range"] = RANGES[idx][0]
+            draw(fig, box_axes, chart_axes, cb_ax, footer_text)
 
     fig.canvas.mpl_connect("button_press_event", _on_click)
 
     def _update(_frame):
-        draw(fig, box_axes, chart_axes, toggle_ax, footer_text)
+        draw(fig, box_axes, chart_axes, cb_ax, footer_text)
 
     ani = animation.FuncAnimation(
         fig, _update, interval=REFRESH_INTERVAL_MS, cache_frame_data=False
