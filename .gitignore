@@ -7,3 +7,4 @@ include/secrets.h
 
 # Logger data — exclude real measurements, keep example file
 logger/data/measurements.csv
+logger/data/backup.log
