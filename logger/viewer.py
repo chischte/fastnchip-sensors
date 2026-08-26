@@ -66,21 +66,44 @@ def filter_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
     span = (df["timestamp"].max() - df["timestamp"].min()).total_seconds()
-    if span < 3600:
-        locator = mdates.MinuteLocator(byminute=range(0, 60, 5))
-        fmt = mdates.DateFormatter("%H:%M")
+
+    def _fmt_with_midnight(x, pos):
+        dt = mdates.num2date(x)
+        if dt.hour == 0 and dt.minute == 0:
+            return dt.strftime("%d.%m\n00:00")
+        return dt.strftime("%H:%M")
+
+    def _bold_midnight():
+        ax.get_figure().canvas.draw()
+        for label in ax.get_xticklabels():
+            if "\n" in label.get_text():
+                label.set_fontweight("bold")
+
+    if _state["show_24h"]:
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(_fmt_with_midnight))
+        t_max = df["timestamp"].max()
+        ax.set_xlim(mdates.date2num(t_max - timedelta(hours=24)), mdates.date2num(t_max))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+        _bold_midnight()
+    elif span < 3600:
+        ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5)))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
     elif span < 86400:
-        locator = mdates.HourLocator()
-        fmt = mdates.DateFormatter("%H:%M")
+        ax.xaxis.set_major_locator(mdates.HourLocator())
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(_fmt_with_midnight))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+        _bold_midnight()
     elif span < 7 * 86400:
-        locator = mdates.HourLocator(byhour=range(0, 24, 6))
-        fmt = mdates.DateFormatter("%d.%m %H:%M")
+        ax.xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(_fmt_with_midnight))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+        _bold_midnight()
     else:
-        locator = mdates.DayLocator()
-        fmt = mdates.DateFormatter("%d.%m")
-    ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(fmt)
-    plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+        ax.xaxis.set_major_locator(mdates.DayLocator())
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
 
 
 def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
