@@ -35,9 +35,10 @@ BTN_ON  = "#3b8c62"
 BTN_OFF = "#b0bfb8"
 
 SERIES = [
-    {"col": "co2_ppm",       "label": "CO2",         "unit": "ppm", "color": "#d65a4a", "ymin": 0,  "ymax": 10000, "step": None, "fmt": ".0f"},
-    {"col": "temperature_c", "label": "Temperature",  "unit": "°C",  "color": "#2878a8", "ymin": 20, "ymax": 35,    "step": 5,    "fmt": ".1f"},
-    {"col": "humidity_rh",   "label": "Humidity",     "unit": "%RH", "color": "#3b8c62", "ymin": 85, "ymax": 100,   "step": 5,    "fmt": ".1f"},
+    {"col": "co2_ppm",     "label": "CO2",        "unit": "ppm", "color": "#d65a4a", "ymin": 0,  "ymax": 10000, "step": None, "fmt": ".0f"},
+    {"col": "temp_box_c",  "label": "Temperature", "unit": "°C",  "color": "#2878a8", "ymin": 20, "ymax": 35,    "step": 5,    "fmt": ".1f",
+     "overlay_col": "temp_outer_c", "overlay_color": "#7bafd4"},
+    {"col": "humidity_rh", "label": "Humidity",    "unit": "%RH", "color": "#3b8c62", "ymin": 85, "ymax": 100,   "step": 5,    "fmt": ".1f"},
 ]
 
 _state = {"range": "all"}   # "all" | "40d" | "24h" | "30m"
@@ -47,6 +48,7 @@ RANGES = [
     ("40d", "40 days",     timedelta(days=40)),
     ("24h", "24 hours",    timedelta(hours=24)),
     ("30m", "30 minutes",  timedelta(minutes=30)),
+    ("5m",  "5 minutes",   timedelta(minutes=5)),
 ]
 
 
@@ -55,7 +57,12 @@ RANGES = [
 # ---------------------------------------------------------------------------
 
 def load_data() -> pd.DataFrame:
-    df = pd.read_csv(CSV_FILE, parse_dates=["timestamp"])
+    df = pd.read_csv(CSV_FILE, parse_dates=["timestamp"],
+                     names=["timestamp", "co2_ppm", "temp_box_c", "humidity_rh", "temp_outer_c"],
+                     header=0, on_bad_lines="skip")
+    if "temp_outer_c" not in df.columns:
+        df["temp_outer_c"] = float("nan")
+    df["temp_outer_c"] = pd.to_numeric(df["temp_outer_c"], errors="coerce")
     df.sort_values("timestamp", inplace=True)
     return df
 
@@ -94,6 +101,12 @@ def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
         ax.set_xlim(mdates.date2num(t_max - timedelta(hours=24)), mdates.date2num(t_max))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
         _bold_midnight()
+    elif _state["range"] == "5m":
+        ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=1))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        t_max = df["timestamp"].max()
+        ax.set_xlim(mdates.date2num(t_max - timedelta(minutes=5)), mdates.date2num(t_max))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
     elif _state["range"] == "30m":
         ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5)))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
@@ -125,7 +138,20 @@ def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
     col = s["col"]
     ax.fill_between(df["timestamp"], df[col], s["ymin"],
                     color=s["color"], alpha=0.12, zorder=2)
-    ax.plot(df["timestamp"], df[col], color=s["color"], linewidth=1.5, zorder=3)
+    ax.plot(df["timestamp"], df[col], color=s["color"], linewidth=1.5, zorder=3,
+            label="Box (SCD41)")
+
+    # Optional second line (e.g. RTD ambient temperature)
+    overlay_col = s.get("overlay_col")
+    if overlay_col and overlay_col in df.columns:
+        valid = df[overlay_col].notna() & (df[overlay_col] != 0)
+        if valid.any():
+            ax.plot(df["timestamp"][valid], df[overlay_col][valid],
+                    color=s["overlay_color"], linewidth=1.2, linestyle="--",
+                    zorder=4, label="Ambient (PT100)")
+            ax.legend(fontsize=7, loc="upper left", framealpha=0.7,
+                      facecolor=BG_CARD, edgecolor=COLOR_GRID)
+
     ax.set_ylim(s["ymin"], s["ymax"])
     if s["step"]:
         ax.yaxis.set_major_locator(MultipleLocator(s["step"]))
@@ -162,16 +188,36 @@ def draw_value_boxes(box_axes: list, last: pd.Series) -> None:
         val = last[s["col"]]
         val_str = format(val, s["fmt"])
 
-        # Label (top, bold, muted grey like units)
+        # Check for RTD overlay delta (temperature box only)
+        overlay_col = s.get("overlay_col")
+        has_delta = False
+        delta_str = ""
+        if overlay_col and overlay_col in last.index:
+            rtd_val = last[overlay_col]
+            if pd.notna(rtd_val) and rtd_val != 0:
+                delta = val - rtd_val
+                sign = "+" if delta >= 0 else ""
+                delta_str = f"{sign}{delta:.1f}"
+                has_delta = True
+
+        val_y = 0.45
+
+        # Label (top, bold, muted grey)
         ax.text(0.5, 0.78, s["label"],
                 ha="center", va="center", fontsize=10, fontweight="bold",
                 color="#607068", transform=ax.transAxes, zorder=2)
-        # Value (middle, large bold, metric color)
-        ax.text(0.5, 0.45, val_str,
+        # Value (always centered in box)
+        ax.text(0.5, val_y, val_str,
                 ha="center", va="center", fontsize=22, fontweight="bold",
                 color=s["color"], transform=ax.transAxes, zorder=2)
-        # Unit (bottom, slightly larger, bold, muted)
-        ax.text(0.5, 0.16, s["unit"],
+        # RTD delta (centered between value right-edge and box right wall)
+        if has_delta:
+            ax.text(0.82, val_y, delta_str,
+                    ha="center", va="center", fontsize=11, fontweight="bold",
+                    color=s.get("overlay_color", "#7bafd4"),
+                    transform=ax.transAxes, zorder=2)
+        # Unit (bottom)
+        ax.text(0.5, 0.13, s["unit"],
                 ha="center", va="center", fontsize=10, fontweight="bold",
                 color="#607068", transform=ax.transAxes, zorder=2)
 

@@ -3,8 +3,12 @@
 #include <WiFi.h>
 #include <SensirionI2cScd4x.h>
 #include <SensirionErrors.h>
+#include <Arduino_PortentaMachineControl.h>
 #include "secrets.h"
 #include "web_ui.h"
+
+#define RTD_RREF     400.0f
+#define RTD_RNOMINAL 100.0f
 
 SensirionI2cScd4x scd4x;
 WiFiServer server(80);
@@ -21,20 +25,23 @@ const uint32_t MEASUREMENT_INTERVAL_MS = 5000;
 const uint32_t SENSOR_STARTUP_WAIT_MS = 5000;
 
 uint16_t currentCo2 = 0;
-float currentTemperature = 0.0f;
 float currentHumidity = 0.0f;
+float currentBoxTemp = 0.0f;   // PT100 channel 0 (in box)
+float currentOuterTemp = 0.0f; // PT100 channel 1 (outside)
 unsigned long lastMeasurement = 0;
 const uint8_t HISTORY_SIZE = 240;
 uint16_t co2History[HISTORY_SIZE];
-float temperatureHistory[HISTORY_SIZE];
+float boxtempHistory[HISTORY_SIZE];
 float humidityHistory[HISTORY_SIZE];
+float outertempHistory[HISTORY_SIZE];
 uint8_t historyCount = 0;
 uint8_t historyIndex = 0;
 
 void recordMeasurement() {
   co2History[historyIndex] = currentCo2;
-  temperatureHistory[historyIndex] = currentTemperature;
+  boxtempHistory[historyIndex] = currentBoxTemp;
   humidityHistory[historyIndex] = currentHumidity;
+  outertempHistory[historyIndex] = currentOuterTemp;
   historyIndex = (historyIndex + 1) % HISTORY_SIZE;
   if (historyCount < HISTORY_SIZE) {
     historyCount++;
@@ -54,8 +61,9 @@ void sendHttpResponse(WiFiClient &client, const char *contentType, const String 
 
 String measurementJson() {
   String json = "{\"co2\":" + String(currentCo2) +
-                ",\"temperature\":" + String(currentTemperature, 1) +
+                ",\"boxtemp\":" + String(currentBoxTemp, 1) +
                 ",\"humidity\":" + String(currentHumidity, 1) +
+                ",\"outertemp\":" + String(currentOuterTemp, 1) +
                 ",\"history\":[";
   uint8_t firstIndex = (historyCount == HISTORY_SIZE) ? historyIndex : 0;
   for (uint8_t i = 0; i < historyCount; i++) {
@@ -64,8 +72,9 @@ String measurementJson() {
       json += ',';
     }
     json += "{\"co2\":" + String(co2History[index]) +
-            ",\"temperature\":" + String(temperatureHistory[index], 1) +
-            ",\"humidity\":" + String(humidityHistory[index], 1) + "}";
+            ",\"boxtemp\":" + String(boxtempHistory[index], 1) +
+            ",\"humidity\":" + String(humidityHistory[index], 1) +
+            ",\"outertemp\":" + String(outertempHistory[index], 1) + "}";
   }
   json += "]}";
   return json;
@@ -189,6 +198,10 @@ void setup() {
     haltWithDelay();
   }
 
+  MachineControl_RTDTempProbe.begin(THREE_WIRE);
+  MachineControl_RTDTempProbe.selectChannel(0);
+  Serial.println("PT100 RTD initialized (ch0=box, ch1=outer).");
+
   uint16_t error = scd4x.startPeriodicMeasurement();
   if (error) {
     printMeasurementError("start periodic measurement", error);
@@ -223,8 +236,8 @@ void loop() {
   lastMeasurement = millis();
 
   uint16_t error;
-
-  error = scd4x.readMeasurement(currentCo2, currentTemperature, currentHumidity);
+  float scdTemp = 0.0f; // SCD41 temperature used only for humidity compensation
+  error = scd4x.readMeasurement(currentCo2, scdTemp, currentHumidity);
   if (error) {
     printMeasurementError("read measurement", error);
     delay(1000);
@@ -237,13 +250,33 @@ void loop() {
     return;
   }
 
+  // Read PT100 box temperature (channel 1)
+  MachineControl_RTDTempProbe.selectChannel(1);
+  currentBoxTemp = MachineControl_RTDTempProbe.readTemperature(RTD_RNOMINAL, RTD_RREF);
+  uint8_t faultBox = MachineControl_RTDTempProbe.readFault();
+  if (faultBox) {
+    MachineControl_RTDTempProbe.clearFault();
+    currentBoxTemp = 0.0f;
+  }
+
+  // Read PT100 outer temperature (channel 0)
+  MachineControl_RTDTempProbe.selectChannel(0);
+  currentOuterTemp = MachineControl_RTDTempProbe.readTemperature(RTD_RNOMINAL, RTD_RREF);
+  uint8_t faultOuter = MachineControl_RTDTempProbe.readFault();
+  if (faultOuter) {
+    MachineControl_RTDTempProbe.clearFault();
+    currentOuterTemp = 0.0f;
+  }
+
   recordMeasurement();
 
   Serial.print("CO2: ");
   Serial.print(currentCo2);
-  Serial.print(" ppm | Temperature: ");
-  Serial.print(currentTemperature, 2);
-  Serial.print(" C | Humidity: ");
+  Serial.print(" ppm | Box: ");
+  Serial.print(currentBoxTemp, 2);
+  Serial.print(" C | Outer: ");
+  Serial.print(currentOuterTemp, 2);
+  Serial.print(" C | Hum: ");
   Serial.print(currentHumidity, 2);
   Serial.println(" %RH");
 

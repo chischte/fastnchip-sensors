@@ -16,7 +16,7 @@ SENSOR_URL = "http://192.168.31.168/api/measurement"
 POLL_INTERVAL = 5          # seconds between polls
 CSV_DIR = Path(__file__).parent / "data"
 CSV_FILE = CSV_DIR / "measurements.csv"
-CSV_HEADER = ["timestamp", "co2_ppm", "temperature_c", "humidity_rh"]
+CSV_HEADER = ["timestamp", "co2_ppm", "temp_box_c", "humidity_rh", "temp_outer_c"]
 
 
 def fetch_measurement(url: str) -> dict | None:
@@ -51,19 +51,19 @@ def main() -> None:
     while True:
         data = fetch_measurement(SENSOR_URL)
         if data:
-            co2 = data.get("co2")
-            temp = data.get("temperature")
-            hum = data.get("humidity")
-
-            # Skip duplicate values (sensor reports same reading multiple times)
+            co2  = data.get("co2")
+            temp = data.get("boxtemp")
+            hum  = data.get("humidity")
+            rtd  = data.get("outertemp", "")
             if co2 == last_co2:
                 time.sleep(POLL_INTERVAL)
                 continue
 
             last_co2 = co2
             ts = timestamp()
-            append_row([ts, co2, temp, hum])
-            print(f"{ts}  CO2: {co2} ppm  Temp: {temp} °C  Hum: {hum} %RH")
+            append_row([ts, co2, temp, hum, rtd])
+            diff = f"  ΔT: +{temp - rtd:.1f}°C" if isinstance(rtd, (int, float)) and rtd else ""
+            print(f"{ts}  CO2: {co2} ppm  Box: {temp}°C  Outer: {rtd}°C{diff}  Hum: {hum}%RH")
 
         time.sleep(POLL_INTERVAL)
 
