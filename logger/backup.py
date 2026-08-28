@@ -1,17 +1,18 @@
 """
 fastnchip-sensors – daily backup
-Copies measurements.csv to the backup folder with today's date appended.
+Creates a consistent dated backup of measurements.db.
 Run daily via Windows Task Scheduler.
 """
 
-import shutil
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
-SRC  = Path(__file__).parent / "data" / "measurements.csv"
-DEST = Path(r"G:\My Drive\DELIA_ENGINEERING\MUSHCULT\CULTIVATION_LOG\fastnchip_data_backup")
+DATA_DIR = Path(__file__).parent / "data"
+SOURCE = DATA_DIR / "measurements.db"
+DEST = Path(r"G:\My Drive\AUTO_BKP_MESSDATEN\FASTNCHIP")
 LOG  = Path(__file__).parent / "data" / "backup.log"
 
 
@@ -42,8 +43,8 @@ def log(msg: str) -> None:
 
 
 def main() -> None:
-    if not SRC.exists():
-        log("SKIP: measurements.csv not found.")
+    if not SOURCE.exists():
+        log("SKIP: no measurement database found.")
         return
 
     drive = Path(DEST.anchor)
@@ -56,10 +57,11 @@ def main() -> None:
     try:
         DEST.mkdir(parents=True, exist_ok=True)
         date_str = datetime.now().strftime("%Y-%m-%d")
-        dest_file = DEST / f"measurements_{date_str}.csv"
-        shutil.copy2(SRC, dest_file)
-        log(f"OK: Backed up to {dest_file}")
-        notify("Sensor Backup OK", f"Saved measurements_{date_str}.csv to Google Drive.")
+        dest_file = DEST / f"measurements_{date_str}.db"
+        with sqlite3.connect(SOURCE) as src_db, sqlite3.connect(dest_file) as dest_db:
+            src_db.backup(dest_db)
+        log(f"OK: Backed up {dest_file.name}")
+        notify("Sensor Backup OK", f"Saved {dest_file.name} to Google Drive.")
     except Exception as exc:
         log(f"ERROR: {exc}")
         notify("Sensor Backup FAILED", str(exc))

@@ -8,6 +8,7 @@ Requirements:
 """
 
 import sys
+import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
@@ -24,6 +25,7 @@ except ImportError:
     sys.exit(1)
 
 CSV_FILE = Path(__file__).parent / "data" / "measurements.csv"
+DB_FILE = Path(__file__).parent / "data" / "measurements.db"
 REFRESH_INTERVAL_MS = 10_000
 
 BG_PAGE    = "#f3f6f4"
@@ -57,9 +59,36 @@ RANGES = [
 # ---------------------------------------------------------------------------
 
 def load_data() -> pd.DataFrame:
-    df = pd.read_csv(CSV_FILE, parse_dates=["timestamp"],
-                     names=["timestamp", "co2_ppm", "temp_box_c", "humidity_rh", "temp_outer_c"],
-                     header=0, on_bad_lines="skip")
+    if DB_FILE.exists():
+        with sqlite3.connect(DB_FILE, timeout=10) as db:
+            count = db.execute("SELECT COUNT(*) FROM measurements").fetchone()[0]
+            stride = max(1, count // 50_000)
+            df = pd.read_sql_query(
+                """SELECT COALESCE(device_time,received_at) AS timestamp,
+                   co2_ppm,temp_box_c,humidity_rh,temp_outer_c
+                   FROM measurements
+                   WHERE id % ? = 0 OR id = (SELECT MAX(id) FROM measurements)
+                   ORDER BY id""", db, params=(stride,))
+    else:
+        df = pd.read_csv(CSV_FILE,
+                         usecols=["timestamp","co2_ppm","temp_box_c","humidity_rh","temp_outer_c"],
+                         on_bad_lines="skip")
+    # Legacy CSV rows contain local timestamps without an offset. New rows are
+    # ISO-8601 timestamps with an offset. Preserve the legacy wall-clock time
+    # and convert offset timestamps to Zurich wall-clock time before sorting.
+    raw_timestamp = df["timestamp"].astype("string")
+    has_offset = raw_timestamp.str.contains(r"(?:Z|[+-]\d{2}:\d{2})$", na=False)
+    timestamp = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+    timestamp.loc[~has_offset] = pd.to_datetime(
+        raw_timestamp.loc[~has_offset], format="mixed", errors="coerce"
+    )
+    timestamp.loc[has_offset] = (
+        pd.to_datetime(raw_timestamp.loc[has_offset], format="mixed", errors="coerce", utc=True)
+        .dt.tz_convert("Europe/Zurich")
+        .dt.tz_localize(None)
+    )
+    df["timestamp"] = timestamp
+    df.dropna(subset=["timestamp"], inplace=True)
     if "temp_outer_c" not in df.columns:
         df["temp_outer_c"] = float("nan")
     df["temp_outer_c"] = pd.to_numeric(df["temp_outer_c"], errors="coerce")
@@ -139,7 +168,7 @@ def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
     ax.fill_between(df["timestamp"], df[col], s["ymin"],
                     color=s["color"], alpha=0.12, zorder=2)
     ax.plot(df["timestamp"], df[col], color=s["color"], linewidth=1.5, zorder=3,
-            label="Box (SCD41)")
+            label="Box (PT100)")
 
     # Optional second line (e.g. RTD ambient temperature)
     overlay_col = s.get("overlay_col")
@@ -310,8 +339,8 @@ def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    if not CSV_FILE.exists():
-        print(f"No data file found at {CSV_FILE}")
+    if not DB_FILE.exists() and not CSV_FILE.exists():
+        print(f"No data file found at {DB_FILE}")
         print("Start logger.py first to collect measurements.")
         sys.exit(1)
 

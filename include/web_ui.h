@@ -1,23 +1,110 @@
 #pragma once
 
+const char UPDATE_HTML[] = R"rawliteral(
+<!doctype html><html><head><meta charset="utf-8"><title>Firmware Update</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:500px;margin:60px auto;padding:20px;background:#f3f6f4}
+.card{background:white;border:1px solid #d9e2dc;border-radius:8px;padding:32px;box-shadow:0 2px 8px #173b2412}
+h2{color:#2a3630;margin-top:0}
+input[type=file]{margin:16px 0;width:100%}
+button{background:#2878a8;color:white;border:none;padding:10px 24px;border-radius:6px;cursor:pointer;font-size:1rem}
+button:hover{background:#1d5c82}
+button:disabled{background:#a0b8c8;cursor:default}
+#status{margin-top:16px;color:#607068;font-size:.95rem}
+#prog-wrap{display:none;margin-top:16px;background:#e8eff0;border-radius:6px;height:20px;overflow:hidden}
+#prog-bar{height:100%;width:0;background:#2878a8;transition:width .2s;border-radius:6px}
+#prog-label{text-align:center;font-size:.85rem;color:#2a3630;margin-top:4px}
+</style></head>
+<body><div class="card"><h2>&#128225; Firmware Update</h2>
+<form id="f">
+  <label>Firmware-Datei (.ota):</label><br>
+  <input type="file" id="bin" accept=".ota" required>
+  <br><button id="btn" type="submit">Upload &amp; Flash</button>
+</form>
+<div id="prog-wrap"><div id="prog-bar"></div></div>
+<div id="prog-label"></div>
+<div id="status"></div>
+</div>
+<script>
+document.getElementById('f').addEventListener('submit',function(e){
+  e.preventDefault();
+  var file=document.getElementById('bin').files[0];
+  if(!file)return;
+  var btn=document.getElementById('btn');
+  var status=document.getElementById('status');
+  var wrap=document.getElementById('prog-wrap');
+  var bar=document.getElementById('prog-bar');
+  var label=document.getElementById('prog-label');
+  btn.disabled=true;
+  status.textContent='Phase 1/3: Firmware-Datei wird übertragen ...';
+  wrap.style.display='block';
+  bar.style.width='0%';
+  label.textContent='0% — 0 / '+Math.round(file.size/1024)+' KB';
+  var xhr=new XMLHttpRequest();
+  xhr.open('POST','/update');
+  xhr.upload.onprogress=function(ev){
+    if(ev.lengthComputable){
+      var pct=Math.round(ev.loaded/ev.total*100);
+      var kb=Math.round(ev.loaded/1024);
+      var tot=Math.round(ev.total/1024);
+      bar.style.width=pct+'%';
+      label.textContent=pct+'% — '+kb+' / '+tot+' KB';
+    }
+  };
+  xhr.upload.onload=function(){
+    bar.style.width='100%';
+    status.textContent='Phase 2/3: Firmware wird geprüft und installiert. Bitte warten ...';
+  };
+  xhr.onload=function(){
+    bar.style.width='100%';
+    label.textContent='100% — Upload abgeschlossen';
+    if(xhr.status>=200&&xhr.status<300){
+      status.textContent='Phase 3/3: '+xhr.responseText+' Verbindung wird wiederhergestellt ...';
+      setTimeout(function(){window.location.href='/';},10000);
+    }else{
+      status.textContent='Fehler: '+xhr.responseText;
+      btn.disabled=false;
+    }
+  };
+  xhr.onerror=function(){
+    status.textContent='Netzwerkfehler beim Upload. Das Gerät wurde nicht aktualisiert.';
+    btn.disabled=false;
+  };
+  var fd=new FormData();
+  fd.append('firmware',file);
+  xhr.send(fd);
+});
+</script></body></html>
+)rawliteral";
+
 const char INDEX_HTML[] = R"rawliteral(
 <!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sensors</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:1000px;margin:0 auto;padding:20px;background:#f3f6f4;color:#17211d}
-h2{margin:0 0 10px;font-size:1rem;color:#2a3630;text-align:center}.values{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.value,section{background:white;border:1px solid #d9e2dc;border-radius:8px;padding:16px;box-shadow:0 2px 8px #173b2412}.value{text-align:center}.value strong{display:block;font-size:2rem;margin-top:8px}.unit{color:#607068}section{margin-top:16px}canvas{width:100%;height:220px;display:block}@media(max-width:650px){.values{grid-template-columns:1fr}.value strong{font-size:1.7rem}}
+h2{margin:0 0 10px;font-size:1rem;color:#2a3630;text-align:center}.values{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.value,section{background:white;border:1px solid #d9e2dc;border-radius:8px;padding:16px;box-shadow:0 2px 8px #173b2412}.value{text-align:center}.value strong{display:block;font-size:2rem;margin-top:8px}.unit{color:#607068}.delta{display:inline-block;font-size:1rem;color:#7bafd4;margin-left:8px;vertical-align:middle;position:absolute;left:62%;top:50%;transform:translateY(-50%)}.value{position:relative}section{margin-top:16px}canvas{width:100%;height:220px;display:block}@media(max-width:650px){.values{grid-template-columns:1fr}.value strong{font-size:1.7rem}}
+#status-footer{text-align:center;margin:22px 0 2px;color:#607068;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.06em}
 </style></head><body>
-<div class="values"><div class="value">CO2<strong id="co2">--</strong><span class="unit">ppm</span></div>
-<div class="value">Temperature<strong id="temperature">--</strong><span class="unit">&deg;C</span></div>
-<div class="value">Humidity<strong id="humidity">--</strong><span class="unit">%RH</span></div></div>
+<div class="values">
+  <div class="value">CO2<strong id="co2">--</strong><span class="unit">ppm</span></div>
+  <div class="value">Temperature
+    <div style="position:relative;text-align:center;margin-top:8px;margin-bottom:4px">
+      <strong id="boxtemp" style="font-size:2rem">--</strong>
+      <span id="tempdelta" style="position:absolute;font-size:1rem;color:#7bafd4;font-weight:600;left:calc(50% + 2.2rem);top:50%;transform:translateY(-50%)"></span>
+    </div>
+    <span class="unit">&deg;C</span>
+  </div>
+  <div class="value">Humidity<strong id="humidity">--</strong><span class="unit">%RH</span></div>
+</div>
 <section><h2>CO2</h2><canvas id="chart-co2" width="900" height="220"></canvas></section>
 <section><h2>Temperature</h2><canvas id="chart-temperature" width="900" height="220"></canvas></section>
 <section><h2>Humidity</h2><canvas id="chart-humidity" width="900" height="220"></canvas></section>
+<footer id="status-footer">Last Reading: -- &nbsp; | &nbsp; -- data points</footer>
 <script>
 const series=[
   {id:'chart-co2',key:'co2',color:'#d65a4a',min:0,max:10000,unit:'ppm'},
-  {id:'chart-temperature',key:'temperature',color:'#2878a8',min:20,max:35,unit:'°C',step:5},
+  {id:'chart-temperature',key:'boxtemp',color:'#2878a8',min:20,max:35,unit:'°C',step:5,overlay:'outertemp',overlayColor:'#7bafd4'},
   {id:'chart-humidity',key:'humidity',color:'#3b8c62',min:85,max:100,unit:'%RH',step:5}
 ];
 
@@ -57,17 +144,27 @@ function drawSeries(canvasId, history, cfg){
   ctx.strokeStyle='#93a39a';
   ctx.stroke();
 
-  const values=history.map(v=>Number(v[cfg.key]));
-  ctx.strokeStyle=cfg.color;
-  ctx.lineWidth=2;
-  ctx.beginPath();
-  values.forEach((v,i)=>{
-    const clamped=Math.max(cfg.min,Math.min(cfg.max,v));
-    const px=left+i*pw/Math.max(1,values.length-1);
-    const py=top+(cfg.max-clamped)*ph/(cfg.max-cfg.min);
-    i?ctx.lineTo(px,py):ctx.moveTo(px,py);
-  });
-  ctx.stroke();
+  function drawLine(key, color, dashed){
+    const values=history.map(v=>Number(v[key]));
+    ctx.strokeStyle=color;
+    ctx.lineWidth=dashed?1.5:2;
+    if(dashed){ctx.setLineDash([5,4]);}else{ctx.setLineDash([]);}
+    ctx.beginPath();
+    const firstTime=Number(history[0].uptime_ms||0),lastTime=Number(history[history.length-1].uptime_ms||0);
+    values.forEach((v,i)=>{
+      if(v===null||!Number.isFinite(v))return;
+      const clamped=Math.max(cfg.min,Math.min(cfg.max,v));
+      const sampleTime=Number(history[i].uptime_ms||0);
+      const px=left+(lastTime>firstTime?(sampleTime-firstTime)*pw/(lastTime-firstTime):i*pw/Math.max(1,values.length-1));
+      const py=top+(cfg.max-clamped)*ph/(cfg.max-cfg.min);
+      i?ctx.lineTo(px,py):ctx.moveTo(px,py);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  drawLine(cfg.key, cfg.color, false);
+  if(cfg.overlay){drawLine(cfg.overlay, cfg.overlayColor, true);}
 
   ctx.fillStyle='#607068';
   ctx.textAlign='center';
@@ -80,6 +177,30 @@ function drawSeries(canvasId, history, cfg){
 }
 
 function draw(history){series.forEach(s=>drawSeries(s.id,history,s));}
-async function update(){try{let r=await fetch('/api/measurement'),d=await r.json();document.querySelector('#co2').textContent=d.co2;document.querySelector('#temperature').textContent=d.temperature.toFixed(1);document.querySelector('#humidity').textContent=d.humidity.toFixed(1);draw(d.history)}catch(e){console.log(e)}}update();setInterval(update,5000);
+function updateFooter(sequence){
+  const now=new Date();
+  const weekdays=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const pad=n=>String(n).padStart(2,'0');
+  const stamp=weekdays[now.getDay()]+', '+pad(now.getDate())+' '+months[now.getMonth()]+' '+now.getFullYear()+' '+pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+  document.querySelector('#status-footer').textContent='Last Reading:  '+stamp+'   |   '+String(sequence||0)+' data points';
+}
+async function update(){
+  try{
+    let r=await fetch('/api/measurement'),payload=await r.json(),d=payload.measurement||payload;
+    document.querySelector('#co2').textContent=d.co2===null?'Fehler':d.co2;
+    document.querySelector('#boxtemp').textContent=d.boxtemp===null?'Fehler':Number(d.boxtemp).toFixed(1);
+    document.querySelector('#humidity').textContent=d.humidity===null?'Fehler':Number(d.humidity).toFixed(1);
+    document.querySelector('#tempdelta').textContent='';
+    if(d.outertemp!==null&&d.boxtemp!==null){
+      const delta=d.boxtemp-d.outertemp;
+      const sign=delta>=0?'+':'';
+      document.querySelector('#tempdelta').textContent=sign+delta.toFixed(1);
+    }
+    draw(payload.history||[]);
+    updateFooter(d.sequence);
+  }catch(e){console.log(e)}
+}
+update();setInterval(update,5000);
 </script></body></html>
 )rawliteral";
