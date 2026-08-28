@@ -26,6 +26,21 @@ Eine vorhandene measurements.csv wird einmalig nach measurements.db importiert.
 Danach wird der QSPI-Puffer nachgeholt und anhand von boot_id plus sequence
 duplikatfrei gespeichert.
 
+## Firmware-Struktur
+
+Die Firmware ist entlang ihrer Verantwortlichkeiten unterteilt:
+
+- `SensorManager`: SCD41- und RTD-Hardwarezugriff
+- `MeasurementController`: Messtakt, Verlauf und Datenfluss
+- `QspiStorage`: persistenter Messpuffer und Partitionen
+- `FirmwareUpdater`: OTA-Datei, Pruefung und Aktivierung
+- `WebServer`: WLAN, HTTP-API und UI-Auslieferung
+- `Application`: explizite Verdrahtung und Ablaufsteuerung
+
+Sensorinitialisierung, HTTP-Empfang, OTA-Upload und Backlog-Auslieferung werden
+schrittweise im Hauptloop verarbeitet. Nur notwendige Start-/Reset-Wartezeiten
+sind blockierend.
+
 Viewer: python logger/viewer.py
 
 CSV fuer Excel: python logger/logger.py --export-csv
