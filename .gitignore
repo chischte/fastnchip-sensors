@@ -5,7 +5,6 @@ __pycache__/
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-include/secrets.h
 
 # Logger data — exclude real measurements, keep example file
 logger/data/measurements.csv

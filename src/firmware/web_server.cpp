@@ -2,7 +2,7 @@
 
 #include "firmware/measurement_json.h"
 #include "firmware/time_utils.h"
-#include "secrets.h"
+#include "wifi-credentials.h"
 #include "web_ui.h"
 
 namespace {

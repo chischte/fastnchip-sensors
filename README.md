@@ -10,7 +10,10 @@ Messsystem fuer eine Klimakammer auf dem Arduino Portenta Machine Control:
 
 ## Installation
 
-1. include/secrets.h mit WIFI_SSID und WIFI_PASSWORD anlegen.
+1. `include/wifi-credentials.example.h` nach
+   `../wifi-credentials.h` kopieren und dort `WIFI_SSID` und
+   `WIFI_PASSWORD` eintragen. Die echte Datei liegt damit ausserhalb des
+   Repositorys.
 2. Sensorparameter und Kanalbelegung in include/config.h kontrollieren.
 3. Firmware bauen: pio run
 4. Erstinstallation per USB/DFU: pio run -t upload
