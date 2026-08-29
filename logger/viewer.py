@@ -17,9 +17,10 @@ try:
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
     import matplotlib.patches as mpatches
-    from matplotlib.ticker import MultipleLocator
+    from matplotlib.ticker import AutoLocator, FixedLocator, MultipleLocator
     from matplotlib.patches import FancyBboxPatch
     import matplotlib.animation as animation
+    from matplotlib.widgets import Button
 except ImportError:
     print("Missing dependencies. Run:  pip install matplotlib pandas")
     sys.exit(1)
@@ -35,15 +36,24 @@ COLOR_GRID = "#d9e2dc"
 COLOR_BORDER = "#d9e2dc"
 BTN_ON  = "#3b8c62"
 BTN_OFF = "#b0bfb8"
+ADAPTIVE_BUTTON_ON = "#5f6763"
+ADAPTIVE_BUTTON_OFF = "#d9dedb"
+ADAPTIVE_BUTTON_TEXT_ON = "#ffffff"
+ADAPTIVE_BUTTON_TEXT_OFF = "#46504b"
 
 SERIES = [
-    {"col": "co2_ppm",     "label": "CO2",        "unit": "ppm", "color": "#d65a4a", "ymin": 0,  "ymax": 10000, "step": None, "fmt": ".0f"},
-    {"col": "temp_box_c",  "label": "Temperature", "unit": "°C",  "color": "#2878a8", "ymin": 20, "ymax": 35,    "step": 5,    "fmt": ".1f",
-     "overlay_col": "temp_outer_c", "overlay_color": "#7bafd4"},
-    {"col": "humidity_rh", "label": "Humidity",    "unit": "%RH", "color": "#3b8c62", "ymin": 85, "ymax": 100,   "step": 5,    "fmt": ".1f"},
+    {"col": "humidity_rh", "label": "Humidity",    "unit": "%RH", "color": "#2878a8", "ymin": 85, "ymax": 100,   "step": 5,    "fmt": ".1f"},
+    {"col": "co2_ppm",     "label": "CO2",        "unit": "ppm", "color": "#7b2cbf", "ymin": 0,  "ymax": 10000, "step": None, "fmt": ".0f"},
+    {"col": "temp_box_c",  "label": "Temperature", "unit": "°C",  "color": "#d65a4a", "ymin": 20, "ymax": 30,    "step": 2,    "fmt": ".1f",
+     "ticks": [20, 22, 24, 26, 28, 30],
+     "overlay_col": "temp_outer_c", "overlay_color": "#e89489"},
 ]
 
-_state = {"range": "all"}   # "all" | "40d" | "24h" | "30m"
+_state = {
+    "range": "24h",
+    "adaptive_y": False,
+    "manual_view": False,
+}
 
 RANGES = [
     ("all", "all data",    None),
@@ -162,13 +172,47 @@ def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
 
 
+def set_y_axis(ax: "plt.Axes", series: dict) -> None:
+    if not _state["adaptive_y"]:
+        ax.set_ylim(series["ymin"], series["ymax"])
+        if "ticks" in series:
+            locator = FixedLocator(series["ticks"])
+        else:
+            locator = MultipleLocator(series["step"]) if series["step"] else AutoLocator()
+        ax.yaxis.set_major_locator(locator)
+        return
+
+    x_min, x_max = sorted(ax.get_xlim())
+    visible_values = []
+    for line in ax.lines:
+        x_values = line.get_xdata(orig=False)
+        y_values = line.get_ydata(orig=False)
+        visible = (
+            pd.notna(x_values)
+            & pd.notna(y_values)
+            & (x_values >= x_min)
+            & (x_values <= x_max)
+        )
+        visible_values.extend(y_values[visible])
+
+    if not visible_values:
+        return
+
+    visible_min = min(visible_values)
+    visible_max = max(visible_values)
+    visible_span = visible_max - visible_min
+    padding = visible_span * 0.08 if visible_span else max(abs(visible_min) * 0.05, 0.5)
+    ax.set_ylim(visible_min - padding, visible_max + padding)
+    ax.yaxis.set_major_locator(AutoLocator())
+
+
 def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
     ax.clear()
     col = s["col"]
     ax.fill_between(df["timestamp"], df[col], s["ymin"],
                     color=s["color"], alpha=0.12, zorder=2)
     ax.plot(df["timestamp"], df[col], color=s["color"], linewidth=1.5, zorder=3,
-            label="Box (PT100)")
+            label="Box")
 
     # Optional second line (e.g. RTD ambient temperature)
     overlay_col = s.get("overlay_col")
@@ -177,13 +221,10 @@ def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
         if valid.any():
             ax.plot(df["timestamp"][valid], df[overlay_col][valid],
                     color=s["overlay_color"], linewidth=1.2, linestyle="--",
-                    zorder=4, label="Ambient (PT100)")
+                    zorder=4, label="Ambient")
             ax.legend(fontsize=7, loc="upper left", framealpha=0.7,
                       facecolor=BG_CARD, edgecolor=COLOR_GRID)
 
-    ax.set_ylim(s["ymin"], s["ymax"])
-    if s["step"]:
-        ax.yaxis.set_major_locator(MultipleLocator(s["step"]))
     ax.set_title(f'{s["label"]} [{s["unit"]}]', fontsize=10, fontweight="bold",
                  color="#2a3630", pad=6)
     ax.set_facecolor(BG_PLOT)
@@ -192,6 +233,7 @@ def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
     ax.tick_params(colors="#607068", labelsize=8)
     ax.grid(True, linestyle="--", linewidth=0.6, color=COLOR_GRID, zorder=1)
     format_xaxis(ax, df)
+    set_y_axis(ax, s)
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +349,12 @@ def draw_checkboxes(cb_ax: "plt.Axes") -> None:
 # ---------------------------------------------------------------------------
 
 def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
-         cb_ax: "plt.Axes", footer_text: "plt.Text") -> None:
+         cb_ax: "plt.Axes", footer_text: "plt.Text",
+         preserve_view: bool = False) -> None:
+    preserved_x_limits = (
+        [axis.get_xlim() for axis in chart_axes] if preserve_view else None
+    )
+
     try:
         df_all = load_data()
     except Exception as exc:
@@ -324,6 +371,10 @@ def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
     draw_value_boxes(box_axes, last)
     for ax, s in zip(chart_axes, SERIES):
         plot_series(ax, df, s)
+    if preserved_x_limits:
+        for axis, series, x_limits in zip(chart_axes, SERIES, preserved_x_limits):
+            axis.set_xlim(x_limits)
+            set_y_axis(axis, series)
     draw_checkboxes(cb_ax)
 
     footer_text.set_text(
@@ -372,8 +423,33 @@ def main() -> None:
     # Charts
     chart_axes = [fig.add_subplot(gs_charts[r]) for r in range(3)]
 
-    # Checkboxes: fixed-size axes at the bottom centre
-    cb_ax = fig.add_axes([0.28, 0.030, 0.44, 0.060])
+    # Range controls and adaptive Y-axis toggle
+    cb_ax = fig.add_axes([0.20, 0.030, 0.44, 0.060])
+    adaptive_button_ax = fig.add_axes([0.70, 0.041, 0.13, 0.035])
+    adaptive_button = Button(
+        adaptive_button_ax,
+        "adaptive y: off",
+        color=BG_PAGE,
+        hovercolor=BG_PAGE,
+    )
+    adaptive_button_ax.set_facecolor(BG_PAGE)
+    for spine in adaptive_button_ax.spines.values():
+        spine.set_visible(False)
+    adaptive_button_background = FancyBboxPatch(
+        (0, 0),
+        1,
+        1,
+        boxstyle="round,pad=0.02,rounding_size=0.12",
+        linewidth=0,
+        facecolor=ADAPTIVE_BUTTON_OFF,
+        transform=adaptive_button_ax.transAxes,
+        zorder=1,
+    )
+    adaptive_button_ax.add_patch(adaptive_button_background)
+    adaptive_button.label.set_fontsize(9.5)
+    adaptive_button.label.set_fontweight("bold")
+    adaptive_button.label.set_color(ADAPTIVE_BUTTON_TEXT_OFF)
+    adaptive_button.label.set_zorder(2)
 
     # Footer text at very bottom
     footer_text = fig.text(
@@ -391,12 +467,58 @@ def main() -> None:
             idx = int(event.xdata * n)
             idx = max(0, min(n - 1, idx))
             _state["range"] = RANGES[idx][0]
+            _state["manual_view"] = False
             draw(fig, box_axes, chart_axes, cb_ax, footer_text)
 
     fig.canvas.mpl_connect("button_press_event", _on_click)
 
+    def _toggle_adaptive_y(_event):
+        _state["adaptive_y"] = not _state["adaptive_y"]
+        enabled = _state["adaptive_y"]
+        adaptive_button.label.set_text(f"adaptive y: {'on' if enabled else 'off'}")
+        adaptive_button.label.set_color(
+            ADAPTIVE_BUTTON_TEXT_ON if enabled else ADAPTIVE_BUTTON_TEXT_OFF
+        )
+        adaptive_button_background.set_facecolor(
+            ADAPTIVE_BUTTON_ON if enabled else ADAPTIVE_BUTTON_OFF
+        )
+        for axis, series in zip(chart_axes, SERIES):
+            set_y_axis(axis, series)
+        fig.canvas.draw_idle()
+
+    adaptive_button.on_clicked(_toggle_adaptive_y)
+
+    def _remember_manual_view(event):
+        if event.inaxes in chart_axes:
+            toolbar = getattr(fig.canvas, "toolbar", None)
+            if toolbar and toolbar.mode:
+                _state["manual_view"] = True
+            if _state["adaptive_y"]:
+                for axis, series in zip(chart_axes, SERIES):
+                    set_y_axis(axis, series)
+                fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("button_release_event", _remember_manual_view)
+
+    def _remember_scroll_zoom(event):
+        if event.inaxes in chart_axes:
+            _state["manual_view"] = True
+            if _state["adaptive_y"]:
+                for axis, series in zip(chart_axes, SERIES):
+                    set_y_axis(axis, series)
+                fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("scroll_event", _remember_scroll_zoom)
+
     def _update(_frame):
-        draw(fig, box_axes, chart_axes, cb_ax, footer_text)
+        draw(
+            fig,
+            box_axes,
+            chart_axes,
+            cb_ax,
+            footer_text,
+            preserve_view=_state["manual_view"],
+        )
 
     ani = animation.FuncAnimation(
         fig, _update, interval=REFRESH_INTERVAL_MS, cache_frame_data=False

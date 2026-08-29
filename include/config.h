@@ -22,7 +22,7 @@ constexpr uint32_t SCD_WAKE_DELAY_MS = 35;
 constexpr uint32_t SCD_STOP_DELAY_MS = 500;
 constexpr uint16_t SCD_MAX_CONSECUTIVE_ERRORS = 3;
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
-constexpr size_t HISTORY_SIZE = 240;
+constexpr size_t HISTORY_SIZE = 360;
 
 // HTTP work is deliberately bounded so the main loop can keep sampling sensors.
 constexpr uint16_t HTTP_PORT = 80;

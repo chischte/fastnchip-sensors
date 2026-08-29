@@ -84,28 +84,29 @@ const char INDEX_HTML[] = R"rawliteral(
 <style>
 body{font-family:system-ui,sans-serif;max-width:1000px;margin:0 auto;padding:20px;background:#f3f6f4;color:#17211d}
 h2{margin:0 0 10px;font-size:1rem;color:#2a3630;text-align:center}.values{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.value,section{background:white;border:1px solid #d9e2dc;border-radius:8px;padding:16px;box-shadow:0 2px 8px #173b2412}.value{text-align:center}.value strong{display:block;font-size:2rem;margin-top:8px}.unit{color:#607068}.delta{display:inline-block;font-size:1rem;color:#7bafd4;margin-left:8px;vertical-align:middle;position:absolute;left:62%;top:50%;transform:translateY(-50%)}.value{position:relative}section{margin-top:16px}canvas{width:100%;height:220px;display:block}@media(max-width:650px){.values{grid-template-columns:1fr}.value strong{font-size:1.7rem}}
+#humidity{color:#2878a8}#co2{color:#7b2cbf}#boxtemp{color:#d65a4a}
 #status-footer{text-align:center;margin:22px 0 2px;color:#607068;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.06em}
 </style></head><body>
 <div class="values">
+  <div class="value">Humidity<strong id="humidity">--</strong><span class="unit">%RH</span></div>
   <div class="value">CO2<strong id="co2">--</strong><span class="unit">ppm</span></div>
   <div class="value">Temperature
     <div style="position:relative;text-align:center;margin-top:8px;margin-bottom:4px">
       <strong id="boxtemp" style="font-size:2rem">--</strong>
-      <span id="tempdelta" style="position:absolute;font-size:1rem;color:#7bafd4;font-weight:600;left:calc(50% + 2.2rem);top:50%;transform:translateY(-50%)"></span>
+      <span id="tempdelta" style="position:absolute;font-size:1rem;color:#e89489;font-weight:600;left:calc(50% + 2.2rem);top:50%;transform:translateY(-50%)"></span>
     </div>
     <span class="unit">&deg;C</span>
   </div>
-  <div class="value">Humidity<strong id="humidity">--</strong><span class="unit">%RH</span></div>
 </div>
+<section><h2>Humidity</h2><canvas id="chart-humidity" width="900" height="220"></canvas></section>
 <section><h2>CO2</h2><canvas id="chart-co2" width="900" height="220"></canvas></section>
 <section><h2>Temperature</h2><canvas id="chart-temperature" width="900" height="220"></canvas></section>
-<section><h2>Humidity</h2><canvas id="chart-humidity" width="900" height="220"></canvas></section>
 <footer id="status-footer">Last Reading: -- &nbsp; | &nbsp; -- data points</footer>
 <script>
 const series=[
-  {id:'chart-co2',key:'co2',color:'#d65a4a',min:0,max:10000,unit:'ppm'},
-  {id:'chart-temperature',key:'boxtemp',color:'#2878a8',min:20,max:35,unit:'°C',step:5,overlay:'outertemp',overlayColor:'#7bafd4'},
-  {id:'chart-humidity',key:'humidity',color:'#3b8c62',min:85,max:100,unit:'%RH',step:5}
+  {id:'chart-humidity',key:'humidity',color:'#2878a8',min:85,max:100,unit:'%RH',step:5},
+  {id:'chart-co2',key:'co2',color:'#7b2cbf',min:0,max:10000,unit:'ppm'},
+  {id:'chart-temperature',key:'boxtemp',color:'#d65a4a',min:20,max:35,unit:'°C',step:5,overlay:'outertemp',overlayColor:'#e89489'}
 ];
 
 function drawSeries(canvasId, history, cfg){
@@ -168,7 +169,7 @@ function drawSeries(canvasId, history, cfg){
 
   ctx.fillStyle='#607068';
   ctx.textAlign='center';
-  const secs=20*60;
+  const secs=30*60;
   for(let i=0;i<=4;i++){
     const x=left+i*pw/4;
     const t=(secs-(secs*i/4))/60;
