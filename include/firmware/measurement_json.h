@@ -6,3 +6,6 @@
 
 void appendMeasurementJson(String& json, const Measurement& measurement,
                            uint32_t bootId);
+
+void appendHistoryMeasurementJson(String& json,
+                                  const Measurement& measurement);

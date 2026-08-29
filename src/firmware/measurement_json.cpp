@@ -36,3 +36,19 @@ void appendMeasurementJson(String& json, const Measurement& measurement,
   json += "},\"faults\":{\"rtd_box\":" + String(measurement.boxFault);
   json += ",\"rtd_outer\":" + String(measurement.outerFault) + "}}";
 }
+
+void appendHistoryMeasurementJson(String& json,
+                                  const Measurement& measurement) {
+  json += "{\"uptime_ms\":" + String(measurement.uptimeMs);
+  json += ",\"co2\":";
+  json += measurement.co2Valid ? String(measurement.co2) : String("null");
+  json += ",\"boxtemp\":" +
+          nullableNumber(measurement.boxTemperature,
+                         measurement.boxTemperatureValid);
+  json += ",\"humidity\":" +
+          nullableNumber(measurement.humidity, measurement.humidityValid);
+  json += ",\"outertemp\":" +
+          nullableNumber(measurement.outerTemperature,
+                         measurement.outerTemperatureValid);
+  json += '}';
+}

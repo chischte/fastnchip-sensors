@@ -247,7 +247,7 @@ void WebServer::finishUpload() {
 
 String WebServer::buildApiJson() const {
   String json;
-  json.reserve(300 + measurements_.historyCount() * 210);
+  json.reserve(300 + measurements_.historyCount() * 100);
   json += "{\"firmware\":\"";
   json += Config::FIRMWARE_VERSION;
   json += "\",\"sensor_ready\":";
@@ -262,8 +262,7 @@ String WebServer::buildApiJson() const {
     if (index) {
       json += ',';
     }
-    appendMeasurementJson(json, measurements_.historyAt(index),
-                          measurements_.bootId());
+    appendHistoryMeasurementJson(json, measurements_.historyAt(index));
   }
   json += "]}";
   return json;
