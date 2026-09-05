@@ -46,6 +46,8 @@ sind blockierend.
 
 Viewer: python logger/viewer.py
 
+<img src="screenshot_viewer.jpg" alt="FastNChip sensor data viewer" width="800">
+
 CSV fuer Excel: python logger/logger.py --export-csv
 
 ## Datenqualitaet
