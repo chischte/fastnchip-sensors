@@ -36,10 +36,14 @@ COLOR_GRID = "#d9e2dc"
 COLOR_BORDER = "#d9e2dc"
 BTN_ON  = "#3b8c62"
 BTN_OFF = "#b0bfb8"
-ADAPTIVE_BUTTON_ON = "#5f6763"
-ADAPTIVE_BUTTON_OFF = "#d9dedb"
+ADAPTIVE_BUTTON_ON = "#638372"
+ADAPTIVE_BUTTON_OFF = "#cdd3d0"
 ADAPTIVE_BUTTON_TEXT_ON = "#ffffff"
 ADAPTIVE_BUTTON_TEXT_OFF = "#46504b"
+ADAPTIVE_BUTTON_CENTER_X = 0.825
+ADAPTIVE_BUTTON_CENTER_Y = 0.0585
+ADAPTIVE_BUTTON_WIDTH_INCHES = 1.69
+ADAPTIVE_BUTTON_HEIGHT_INCHES = 0.37
 
 SERIES = [
     {"col": "humidity_rh", "label": "Humidity",    "unit": "%RH", "color": "#2878a8", "ymin": 85, "ymax": 100,   "step": 5,    "fmt": ".1f"},
@@ -231,6 +235,17 @@ def synchronize_x_axes(chart_axes: list, source_axis: "plt.Axes") -> None:
     for axis in chart_axes:
         if axis is not source_axis:
             axis.set_xlim(x_limits)
+
+
+def position_adaptive_button(fig: "plt.Figure", button_axis: "plt.Axes") -> None:
+    width = ADAPTIVE_BUTTON_WIDTH_INCHES / fig.get_figwidth()
+    height = ADAPTIVE_BUTTON_HEIGHT_INCHES / fig.get_figheight()
+    button_axis.set_position([
+        ADAPTIVE_BUTTON_CENTER_X - width / 2,
+        ADAPTIVE_BUTTON_CENTER_Y - height / 2,
+        width,
+        height,
+    ])
 
 
 def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
@@ -484,7 +499,8 @@ def main() -> None:
 
     # Range controls and adaptive Y-axis toggle
     range_axis = fig.add_axes([0.32, 0.030, 0.36, 0.060])
-    adaptive_button_ax = fig.add_axes([0.76, 0.041, 0.13, 0.035])
+    adaptive_button_ax = fig.add_axes([0, 0, 0.13, 0.035])
+    position_adaptive_button(fig, adaptive_button_ax)
     adaptive_button = Button(
         adaptive_button_ax,
         "adaptive y: off",
@@ -498,7 +514,7 @@ def main() -> None:
         (0, 0),
         1,
         1,
-        boxstyle="round,pad=0.02,rounding_size=0.12",
+        boxstyle="round,pad=0.02,rounding_size=0.24",
         linewidth=0,
         facecolor=ADAPTIVE_BUTTON_OFF,
         transform=adaptive_button_ax.transAxes,
@@ -544,6 +560,11 @@ def main() -> None:
         fig.canvas.draw_idle()
 
     adaptive_button.on_clicked(_toggle_adaptive_y)
+
+    def _keep_adaptive_button_size(_event):
+        position_adaptive_button(fig, adaptive_button_ax)
+
+    fig.canvas.mpl_connect("resize_event", _keep_adaptive_button_size)
 
     def _remember_manual_view(event):
         if event.inaxes in chart_axes:
