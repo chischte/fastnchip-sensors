@@ -196,6 +196,17 @@ def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
 
 
+def format_zoomed_xaxis(ax: "plt.Axes") -> None:
+    locator = mdates.AutoDateLocator(
+        minticks=5,
+        maxticks=10,
+        interval_multiples=True,
+    )
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+
+
 def set_y_axis(ax: "plt.Axes", series: dict) -> None:
     if not _state["adaptive_y"]:
         ax.set_ylim(series["ymin"], series["ymax"])
@@ -448,6 +459,7 @@ def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
     if preserved_x_limits:
         for axis, series, x_limits in zip(chart_axes, SERIES, preserved_x_limits):
             axis.set_xlim(x_limits)
+            format_zoomed_xaxis(axis)
             set_y_axis(axis, series)
     draw_range_selector(range_axis)
 
@@ -572,10 +584,12 @@ def main() -> None:
             if toolbar and toolbar.mode:
                 _state["manual_view"] = True
                 synchronize_x_axes(chart_axes, event.inaxes)
+                for axis in chart_axes:
+                    format_zoomed_xaxis(axis)
             if _state["adaptive_y"]:
                 for axis, series in zip(chart_axes, SERIES):
                     set_y_axis(axis, series)
-                fig.canvas.draw_idle()
+            fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect("button_release_event", _remember_manual_view)
 
@@ -583,10 +597,12 @@ def main() -> None:
         if event.inaxes in chart_axes:
             _state["manual_view"] = True
             synchronize_x_axes(chart_axes, event.inaxes)
+            for axis in chart_axes:
+                format_zoomed_xaxis(axis)
             if _state["adaptive_y"]:
                 for axis, series in zip(chart_axes, SERIES):
                     set_y_axis(axis, series)
-                fig.canvas.draw_idle()
+            fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect("scroll_event", _remember_scroll_zoom)
 
