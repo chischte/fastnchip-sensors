@@ -206,6 +206,13 @@ def set_y_axis(ax: "plt.Axes", series: dict) -> None:
     ax.yaxis.set_major_locator(AutoLocator())
 
 
+def synchronize_x_axes(chart_axes: list, source_axis: "plt.Axes") -> None:
+    x_limits = source_axis.get_xlim()
+    for axis in chart_axes:
+        if axis is not source_axis:
+            axis.set_xlim(x_limits)
+
+
 def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
     ax.clear()
     col = s["col"]
@@ -493,6 +500,7 @@ def main() -> None:
             toolbar = getattr(fig.canvas, "toolbar", None)
             if toolbar and toolbar.mode:
                 _state["manual_view"] = True
+                synchronize_x_axes(chart_axes, event.inaxes)
             if _state["adaptive_y"]:
                 for axis, series in zip(chart_axes, SERIES):
                     set_y_axis(axis, series)
@@ -503,6 +511,7 @@ def main() -> None:
     def _remember_scroll_zoom(event):
         if event.inaxes in chart_axes:
             _state["manual_view"] = True
+            synchronize_x_axes(chart_axes, event.inaxes)
             if _state["adaptive_y"]:
                 for axis, series in zip(chart_axes, SERIES):
                     set_y_axis(axis, series)
