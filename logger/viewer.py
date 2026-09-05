@@ -56,12 +56,19 @@ _state = {
 }
 
 RANGES = [
-    ("all", "all data",    None),
-    ("40d", "40 days",     timedelta(days=40)),
-    ("24h", "24 hours",    timedelta(hours=24)),
-    ("30m", "30 minutes",  timedelta(minutes=30)),
-    ("5m",  "5 minutes",   timedelta(minutes=5)),
+    ("all", "∞",      None),
+    ("40d", "40d",    timedelta(days=40)),
+    ("1w", "1w",      timedelta(weeks=1)),
+    ("24h", "24h",    timedelta(hours=24)),
+    ("3h", "3h",      timedelta(hours=3)),
+    ("30m", "30min",  timedelta(minutes=30)),
+    ("5m", "5min",    timedelta(minutes=5)),
 ]
+
+RANGE_TRACK_START = 0.12
+RANGE_TRACK_END = 0.88
+RANGE_MINUS_X = 0.04
+RANGE_PLUS_X = 0.96
 
 
 # ---------------------------------------------------------------------------
@@ -133,13 +140,26 @@ def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
             if "\n" in label.get_text():
                 label.set_fontweight("bold")
 
-    if _state["range"] == "24h":
+    if _state["range"] == "1w":
+        ax.xaxis.set_major_locator(mdates.HourLocator(byhour=[0, 12]))
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(_fmt_with_midnight))
+        t_max = df["timestamp"].max()
+        ax.set_xlim(mdates.date2num(t_max - timedelta(weeks=1)), mdates.date2num(t_max))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+        _bold_midnight()
+    elif _state["range"] == "24h":
         ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
         ax.xaxis.set_major_formatter(plt.FuncFormatter(_fmt_with_midnight))
         t_max = df["timestamp"].max()
         ax.set_xlim(mdates.date2num(t_max - timedelta(hours=24)), mdates.date2num(t_max))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
         _bold_midnight()
+    elif _state["range"] == "3h":
+        ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=[0, 30]))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        t_max = df["timestamp"].max()
+        ax.set_xlim(mdates.date2num(t_max - timedelta(hours=3)), mdates.date2num(t_max))
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
     elif _state["range"] == "5m":
         ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=1))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
@@ -301,54 +321,86 @@ def draw_value_boxes(box_axes: list, last: pd.Series) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Checkboxes (radio-style: one selected at a time)
+# Range selector
 # ---------------------------------------------------------------------------
 
-def draw_checkboxes(cb_ax: "plt.Axes") -> None:
-    cb_ax.clear()
-    cb_ax.set_xlim(0, 1)
-    cb_ax.set_ylim(0, 1)
-    cb_ax.axis("off")
+def range_selector_positions() -> list[float]:
+    spacing = (RANGE_TRACK_END - RANGE_TRACK_START) / (len(RANGES) - 1)
+    return [RANGE_TRACK_START + index * spacing for index in range(len(RANGES))]
 
-    # Outer card — clip_on=False so border is fully visible
+
+def draw_range_selector(range_axis: "plt.Axes") -> None:
+    range_axis.clear()
+    range_axis.set_xlim(0, 1)
+    range_axis.set_ylim(0, 1)
+    range_axis.axis("off")
+
     card = FancyBboxPatch((0.01, 0.08), 0.98, 0.84,
                           boxstyle="round,pad=0.02",
                           linewidth=1, edgecolor=COLOR_BORDER,
                           facecolor=BG_CARD,
-                          transform=cb_ax.transAxes, zorder=1,
+                          transform=range_axis.transAxes, zorder=1,
                           clip_on=False)
-    cb_ax.add_patch(card)
+    range_axis.add_patch(card)
 
-    n = len(RANGES)
-    margin = 0.10
-    slot_w = (1 - 2 * margin) / n
-    box_w  = 0.022
+    track_y = 0.60
+    label_y = 0.22
+    positions = range_selector_positions()
+    range_axis.plot(
+        [RANGE_TRACK_START, RANGE_TRACK_END], [track_y, track_y],
+        color="#9aada6", linewidth=1.5,
+        transform=range_axis.transAxes, zorder=2,
+    )
+    range_axis.text(
+        RANGE_MINUS_X, track_y, "−",
+        ha="center", va="center", fontsize=15, fontweight="bold",
+        color="#46504b", transform=range_axis.transAxes, zorder=3,
+    )
+    range_axis.text(
+        RANGE_PLUS_X, track_y, "+",
+        ha="center", va="center", fontsize=14, fontweight="bold",
+        color="#46504b", transform=range_axis.transAxes, zorder=3,
+    )
 
-    for i, (key, label, _) in enumerate(RANGES):
-        cx = margin + (i + 0.5) * slot_w
+    for position, (key, label, _) in zip(positions, RANGES):
         selected = _state["range"] == key
+        marker_width = 0.075 if selected else 0.051
+        marker_height = 0.100 if selected else 0.068
+        marker = mpatches.Ellipse(
+            (position, track_y),
+            width=marker_width,
+            height=marker_height,
+            edgecolor=BTN_ON if selected else "#9aada6",
+            facecolor=BTN_ON if selected else BG_CARD,
+            linewidth=1.2, transform=range_axis.transAxes, zorder=3,
+        )
+        range_axis.add_patch(marker)
+        range_axis.text(
+            position, label_y, label,
+            ha="center", va="center", fontsize=8,
+            color="#2a3630" if selected else "#607068",
+            fontweight="bold" if selected else "normal",
+            transform=range_axis.transAxes, zorder=3,
+        )
 
-        # Fixed positions that look centred: box at y=0.38..0.66, label centre at 0.22
-        box_h   = 0.28
-        box_y   = 0.38
-        label_y = 0.22   # text centre (va=center)
+    range_axis.figure.canvas.draw_idle()
 
-        rect = FancyBboxPatch((cx - box_w / 2, box_y), box_w, box_h,
-                              boxstyle="round,pad=0.003",
-                              linewidth=1.2,
-                              edgecolor=BTN_ON if selected else "#9aada6",
-                              facecolor=BTN_ON if selected else BG_PAGE,
-                              transform=cb_ax.transAxes, zorder=2,
-                              clip_on=False)
-        cb_ax.add_patch(rect)
 
-        cb_ax.text(cx, label_y, label,
-                   ha="center", va="center", fontsize=8,
-                   color="#2a3630" if selected else "#607068",
-                   fontweight="bold" if selected else "normal",
-                   transform=cb_ax.transAxes, zorder=2)
+def range_index_for_click(x_position: float) -> int:
+    current_index = next(
+        index for index, (key, _, _) in enumerate(RANGES)
+        if key == _state["range"]
+    )
+    if x_position <= (RANGE_MINUS_X + RANGE_TRACK_START) / 2:
+        return max(0, current_index - 1)
+    if x_position >= (RANGE_PLUS_X + RANGE_TRACK_END) / 2:
+        return min(len(RANGES) - 1, current_index + 1)
 
-    cb_ax.figure.canvas.draw_idle()
+    positions = range_selector_positions()
+    return min(
+        range(len(positions)),
+        key=lambda index: abs(positions[index] - x_position),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +408,7 @@ def draw_checkboxes(cb_ax: "plt.Axes") -> None:
 # ---------------------------------------------------------------------------
 
 def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
-         cb_ax: "plt.Axes", footer_text: "plt.Text",
+         range_axis: "plt.Axes", footer_text: "plt.Text",
          preserve_view: bool = False) -> None:
     preserved_x_limits = (
         [axis.get_xlim() for axis in chart_axes] if preserve_view else None
@@ -382,7 +434,7 @@ def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
         for axis, series, x_limits in zip(chart_axes, SERIES, preserved_x_limits):
             axis.set_xlim(x_limits)
             set_y_axis(axis, series)
-    draw_checkboxes(cb_ax)
+    draw_range_selector(range_axis)
 
     footer_text.set_text(
         f"Last Reading:  {ts.strftime('%A, %d %B %Y')}  {ts.strftime('%H:%M:%S')}"
@@ -431,8 +483,8 @@ def main() -> None:
     chart_axes = [fig.add_subplot(gs_charts[r]) for r in range(3)]
 
     # Range controls and adaptive Y-axis toggle
-    cb_ax = fig.add_axes([0.20, 0.030, 0.44, 0.060])
-    adaptive_button_ax = fig.add_axes([0.70, 0.041, 0.13, 0.035])
+    range_axis = fig.add_axes([0.32, 0.030, 0.36, 0.060])
+    adaptive_button_ax = fig.add_axes([0.76, 0.041, 0.13, 0.035])
     adaptive_button = Button(
         adaptive_button_ax,
         "adaptive y: off",
@@ -465,17 +517,15 @@ def main() -> None:
         fontsize=8, color="#607068", fontfamily="monospace",
     )
 
-    draw(fig, box_axes, chart_axes, cb_ax, footer_text)
+    draw(fig, box_axes, chart_axes, range_axis, footer_text)
 
-    # Click on a checkbox selects that range
+    # Minus/plus step through the ranges; labels and markers select directly.
     def _on_click(event):
-        if event.inaxes is cb_ax and event.xdata is not None:
-            n = len(RANGES)
-            idx = int(event.xdata * n)
-            idx = max(0, min(n - 1, idx))
+        if event.inaxes is range_axis and event.xdata is not None:
+            idx = range_index_for_click(event.xdata)
             _state["range"] = RANGES[idx][0]
             _state["manual_view"] = False
-            draw(fig, box_axes, chart_axes, cb_ax, footer_text)
+            draw(fig, box_axes, chart_axes, range_axis, footer_text)
 
     fig.canvas.mpl_connect("button_press_event", _on_click)
 
@@ -524,7 +574,7 @@ def main() -> None:
             fig,
             box_axes,
             chart_axes,
-            cb_ax,
+            range_axis,
             footer_text,
             preserve_view=_state["manual_view"],
         )
