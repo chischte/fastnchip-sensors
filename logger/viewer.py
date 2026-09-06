@@ -12,6 +12,11 @@ import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
+if __package__:
+    from .viewer_window import configure_viewer_window
+else:
+    from viewer_window import configure_viewer_window
+
 try:
     import pandas as pd
     import matplotlib.pyplot as plt
@@ -28,22 +33,52 @@ except ImportError:
 CSV_FILE = Path(__file__).parent / "data" / "measurements.csv"
 DB_FILE = Path(__file__).parent / "data" / "measurements.db"
 REFRESH_INTERVAL_MS = 10_000
+AXIS_DATE_FORMAT = "%d/%m/%y"
+AXIS_LABEL_FONT_SIZE = 8
 
-BG_PAGE    = "#f3f6f4"
-BG_CARD    = "#ffffff"
-BG_PLOT    = "#f9faf9"
-COLOR_GRID = "#d9e2dc"
-COLOR_BORDER = "#d9e2dc"
-BTN_ON  = "#3b8c62"
-BTN_OFF = "#b0bfb8"
-ADAPTIVE_BUTTON_ON = "#638372"
-ADAPTIVE_BUTTON_OFF = "#cdd3d0"
-ADAPTIVE_BUTTON_TEXT_ON = "#ffffff"
-ADAPTIVE_BUTTON_TEXT_OFF = "#46504b"
+LIGHT_THEME = {
+    "zoom_selection": "#007acc",
+    "page": "#f3f6f4",
+    "card": "#ffffff",
+    "plot": "#f9faf9",
+    "grid": "#d9e2dc",
+    "text": "#2a3630",
+    "muted": "#607068",
+    "track": "#9aada6",
+    "selected": "#3b8c62",
+    "button_on": "#638372",
+    "button_off": "#cdd3d0",
+    "button_text_on": "#ffffff",
+    "button_text_off": "#46504b",
+}
+DARK_THEME = {
+    "zoom_selection": "#7ce8ff",
+    "page": "#171e1b",
+    "card": "#242e29",
+    "plot": "#1d2621",
+    "grid": "#3c4b43",
+    "text": "#e6eee9",
+    "muted": "#adbbb3",
+    "track": "#778e81",
+    "selected": "#78c79b",
+    "button_on": "#638372",
+    "button_off": "#3c4b43",
+    "button_text_on": "#ffffff",
+    "button_text_off": "#d3dfd7",
+}
 ADAPTIVE_BUTTON_CENTER_X = 0.825
-ADAPTIVE_BUTTON_CENTER_Y = 0.0585
-ADAPTIVE_BUTTON_WIDTH_INCHES = 1.69
-ADAPTIVE_BUTTON_HEIGHT_INCHES = 0.37
+DARK_MODE_BUTTON_CENTER_X = 0.175
+TOGGLE_BUTTON_CENTER_Y = 0.0585
+TOGGLE_BUTTON_WIDTH_INCHES = 1.69
+TOGGLE_BUTTON_HEIGHT_INCHES = 0.37
+CONTROL_ROW_TOP = 0.09
+X_AXIS_LABEL_SPACE_INCHES = 0.45
+CONTROL_BUTTON_GAP_INCHES = 0.10
+
+
+def current_theme() -> dict:
+    return DARK_THEME if _state["dark_mode"] else LIGHT_THEME
+
 
 SERIES = [
     {"col": "humidity_rh", "label": "Humidity",    "unit": "%RH", "color": "#2878a8", "ymin": 85, "ymax": 100,   "step": 5,    "fmt": ".1f"},
@@ -56,6 +91,7 @@ SERIES = [
 _state = {
     "range": "24h",
     "adaptive_y": False,
+    "dark_mode": False,
     "manual_view": False,
 }
 
@@ -135,7 +171,7 @@ def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
     def _fmt_with_midnight(x, pos):
         dt = mdates.num2date(x)
         if dt.hour == 0 and dt.minute == 0:
-            return dt.strftime("%d.%m\n00:00")
+            return dt.strftime(f"{AXIS_DATE_FORMAT}\n00:00")
         return dt.strftime("%H:%M")
 
     def _bold_midnight():
@@ -192,7 +228,7 @@ def format_xaxis(ax: "plt.Axes", df: pd.DataFrame) -> None:
         _bold_midnight()
     else:
         ax.xaxis.set_major_locator(mdates.DayLocator())
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter(AXIS_DATE_FORMAT))
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
 
 
@@ -203,7 +239,16 @@ def format_zoomed_xaxis(ax: "plt.Axes") -> None:
         interval_multiples=True,
     )
     ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(
+        locator,
+        formats=[AXIS_DATE_FORMAT, AXIS_DATE_FORMAT, "%d", "%H:%M", "%H:%M", "%S.%f"],
+        zero_formats=["", AXIS_DATE_FORMAT, AXIS_DATE_FORMAT, AXIS_DATE_FORMAT, "%H:%M", "%H:%M"],
+        offset_formats=[
+            "", AXIS_DATE_FORMAT, AXIS_DATE_FORMAT, AXIS_DATE_FORMAT,
+            AXIS_DATE_FORMAT, f"{AXIS_DATE_FORMAT} %H:%M",
+        ],
+    ))
+    ax.xaxis.get_offset_text().set_fontsize(AXIS_LABEL_FONT_SIZE)
     plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
 
 
@@ -248,18 +293,51 @@ def synchronize_x_axes(chart_axes: list, source_axis: "plt.Axes") -> None:
             axis.set_xlim(x_limits)
 
 
-def position_adaptive_button(fig: "plt.Figure", button_axis: "plt.Axes") -> None:
-    width = ADAPTIVE_BUTTON_WIDTH_INCHES / fig.get_figwidth()
-    height = ADAPTIVE_BUTTON_HEIGHT_INCHES / fig.get_figheight()
+def position_toggle_button(fig: "plt.Figure", button_axis: "plt.Axes",
+                           center_x: float) -> None:
+    width = TOGGLE_BUTTON_WIDTH_INCHES / fig.get_figwidth()
+    height = TOGGLE_BUTTON_HEIGHT_INCHES / fig.get_figheight()
     button_axis.set_position([
-        ADAPTIVE_BUTTON_CENTER_X - width / 2,
-        ADAPTIVE_BUTTON_CENTER_Y - height / 2,
+        center_x - width / 2,
+        TOGGLE_BUTTON_CENTER_Y - height / 2,
         width,
         height,
     ])
 
 
+def style_toggle_button(button: Button, background: FancyBboxPatch,
+                        label: str, enabled: bool) -> None:
+    theme = current_theme()
+    button.color = theme["page"]
+    button.hovercolor = theme["page"]
+    button.ax.set_facecolor(theme["page"])
+    button.label.set_text(f"{label}: {'on' if enabled else 'off'}")
+    button.label.set_color(theme["button_text_on" if enabled else "button_text_off"])
+    background.set_facecolor(theme["button_on" if enabled else "button_off"])
+
+
+def create_toggle_button(fig: "plt.Figure", center_x: float,
+                         label: str, enabled: bool) -> tuple[Button, FancyBboxPatch]:
+    button_axis = fig.add_axes([0, 0, 0.13, 0.035])
+    position_toggle_button(fig, button_axis, center_x)
+    button = Button(button_axis, "")
+    for spine in button_axis.spines.values():
+        spine.set_visible(False)
+    background = FancyBboxPatch(
+        (0, 0), 1, 1,
+        boxstyle="round,pad=0.02,rounding_size=0.24",
+        linewidth=0, transform=button_axis.transAxes, zorder=1,
+    )
+    button_axis.add_patch(background)
+    button.label.set_fontsize(9.5)
+    button.label.set_fontweight("bold")
+    button.label.set_zorder(2)
+    style_toggle_button(button, background, label, enabled)
+    return button, background
+
+
 def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
+    theme = current_theme()
     ax.clear()
     col = s["col"]
     ax.fill_between(df["timestamp"], df[col], s["ymin"],
@@ -276,15 +354,19 @@ def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
                     color=s["overlay_color"], linewidth=1.2, linestyle="--",
                     zorder=4, label="Ambient")
             ax.legend(fontsize=7, loc="upper left", framealpha=0.7,
-                      facecolor=BG_CARD, edgecolor=COLOR_GRID)
+                      facecolor=theme["card"], edgecolor=theme["grid"],
+                      labelcolor=theme["text"])
 
     ax.set_title(f'{s["label"]} [{s["unit"]}]', fontsize=10, fontweight="bold",
-                 color="#2a3630", pad=6)
-    ax.set_facecolor(BG_PLOT)
+                 color=theme["text"], pad=6)
+    ax.set_facecolor(theme["plot"])
     ax.spines[["top", "right"]].set_visible(False)
-    ax.spines[["left", "bottom"]].set_color(COLOR_GRID)
-    ax.tick_params(colors="#607068", labelsize=8)
-    ax.grid(True, linestyle="--", linewidth=0.6, color=COLOR_GRID, zorder=1)
+    ax.spines[["left", "bottom"]].set_color(theme["grid"])
+    ax.tick_params(colors=theme["muted"], labelsize=AXIS_LABEL_FONT_SIZE)
+    ax.xaxis.get_offset_text().set_color(theme["muted"])
+    ax.xaxis.get_offset_text().set_fontsize(AXIS_LABEL_FONT_SIZE)
+    ax.yaxis.get_offset_text().set_color(theme["muted"])
+    ax.grid(True, linestyle="--", linewidth=0.6, color=theme["grid"], zorder=1)
     format_xaxis(ax, df)
     set_y_axis(ax, s)
 
@@ -294,17 +376,18 @@ def plot_series(ax: "plt.Axes", df: pd.DataFrame, s: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def draw_value_boxes(box_axes: list, last: pd.Series) -> None:
+    theme = current_theme()
     for ax, s in zip(box_axes, SERIES):
         ax.clear()
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.axis("off")
 
-        # White card background with border
+        # Card background with border
         card = FancyBboxPatch((0.03, 0.05), 0.94, 0.90,
                               boxstyle="round,pad=0.02",
-                              linewidth=1, edgecolor=COLOR_BORDER,
-                              facecolor=BG_CARD,
+                              linewidth=1, edgecolor=theme["grid"],
+                              facecolor=theme["card"],
                               transform=ax.transAxes, zorder=1,
                               clip_on=False)
         ax.add_patch(card)
@@ -329,7 +412,7 @@ def draw_value_boxes(box_axes: list, last: pd.Series) -> None:
         # Label (top, bold, muted grey)
         ax.text(0.5, 0.78, s["label"],
                 ha="center", va="center", fontsize=10, fontweight="bold",
-                color="#607068", transform=ax.transAxes, zorder=2)
+                color=theme["muted"], transform=ax.transAxes, zorder=2)
         # Value (always centered in box)
         ax.text(0.5, val_y, val_str,
                 ha="center", va="center", fontsize=22, fontweight="bold",
@@ -343,7 +426,7 @@ def draw_value_boxes(box_axes: list, last: pd.Series) -> None:
         # Unit (bottom)
         ax.text(0.5, 0.13, s["unit"],
                 ha="center", va="center", fontsize=10, fontweight="bold",
-                color="#607068", transform=ax.transAxes, zorder=2)
+                color=theme["muted"], transform=ax.transAxes, zorder=2)
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +439,7 @@ def range_selector_positions() -> list[float]:
 
 
 def draw_range_selector(range_axis: "plt.Axes") -> None:
+    theme = current_theme()
     range_axis.clear()
     range_axis.set_xlim(0, 1)
     range_axis.set_ylim(0, 1)
@@ -363,8 +447,8 @@ def draw_range_selector(range_axis: "plt.Axes") -> None:
 
     card = FancyBboxPatch((0.01, 0.08), 0.98, 0.84,
                           boxstyle="round,pad=0.02",
-                          linewidth=1, edgecolor=COLOR_BORDER,
-                          facecolor=BG_CARD,
+                          linewidth=1, edgecolor=theme["grid"],
+                          facecolor=theme["card"],
                           transform=range_axis.transAxes, zorder=1,
                           clip_on=False)
     range_axis.add_patch(card)
@@ -374,18 +458,18 @@ def draw_range_selector(range_axis: "plt.Axes") -> None:
     positions = range_selector_positions()
     range_axis.plot(
         [RANGE_TRACK_START, RANGE_TRACK_END], [track_y, track_y],
-        color="#9aada6", linewidth=1.5,
+        color=theme["track"], linewidth=1.5,
         transform=range_axis.transAxes, zorder=2,
     )
     range_axis.text(
         RANGE_MINUS_X, track_y, "−",
         ha="center", va="center", fontsize=15, fontweight="bold",
-        color="#46504b", transform=range_axis.transAxes, zorder=3,
+        color=theme["button_text_off"], transform=range_axis.transAxes, zorder=3,
     )
     range_axis.text(
         RANGE_PLUS_X, track_y, "+",
         ha="center", va="center", fontsize=14, fontweight="bold",
-        color="#46504b", transform=range_axis.transAxes, zorder=3,
+        color=theme["button_text_off"], transform=range_axis.transAxes, zorder=3,
     )
 
     for position, (key, label, _) in zip(positions, RANGES):
@@ -396,15 +480,15 @@ def draw_range_selector(range_axis: "plt.Axes") -> None:
             (position, track_y),
             width=marker_width,
             height=marker_height,
-            edgecolor=BTN_ON if selected else "#9aada6",
-            facecolor=BTN_ON if selected else BG_CARD,
+            edgecolor=theme["selected"] if selected else theme["track"],
+            facecolor=theme["selected"] if selected else theme["card"],
             linewidth=1.2, transform=range_axis.transAxes, zorder=3,
         )
         range_axis.add_patch(marker)
         range_axis.text(
             position, label_y, label,
             ha="center", va="center", fontsize=8,
-            color="#2a3630" if selected else "#607068",
+            color=theme["text"] if selected else theme["muted"],
             fontweight="bold" if selected else "normal",
             transform=range_axis.transAxes, zorder=3,
         )
@@ -464,10 +548,12 @@ def draw(fig: "plt.Figure", box_axes: list, chart_axes: list,
     draw_range_selector(range_axis)
 
     footer_text.set_text(
-        f"Last Reading:  {ts.strftime('%A, %d %B %Y')}  {ts.strftime('%H:%M:%S')}"
+        f"Last Reading:  {ts.strftime(AXIS_DATE_FORMAT)}  {ts.strftime('%H:%M:%S')}"
         f"   |   {len(df_all)} data points"
     )
 
+    fig.set_facecolor(current_theme()["page"])
+    footer_text.set_color(current_theme()["muted"])
     fig.canvas.draw_idle()
 
 
@@ -481,8 +567,11 @@ def main() -> None:
         print("Start logger.py first to collect measurements.")
         sys.exit(1)
 
-    fig = plt.figure(figsize=(13, 10.5))
-    fig.patch.set_facecolor(BG_PAGE)
+    fig = plt.figure(figsize=(11, 8.5))
+    fig.patch.set_facecolor(current_theme()["page"])
+    window_controls = configure_viewer_window(fig)
+    if window_controls is not None:
+        window_controls.apply_theme(current_theme())
 
     from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
@@ -492,7 +581,9 @@ def main() -> None:
         figure=fig,
         height_ratios=[1, 6.5, 0.01],
         hspace=0.12,          # gap between boxes row and charts block
-        top=0.97, bottom=0.10, left=0.07, right=0.97,
+        top=0.97,
+        bottom=CONTROL_ROW_TOP + X_AXIS_LABEL_SPACE_INCHES / fig.get_figheight(),
+        left=0.07, right=0.97,
     )
 
     # Inner grid for the 3 charts — controls spacing between charts only
@@ -509,40 +600,20 @@ def main() -> None:
     # Charts
     chart_axes = [fig.add_subplot(gs_charts[r]) for r in range(3)]
 
-    # Range controls and adaptive Y-axis toggle
+    # Range selector flanked by matching theme and adaptive Y toggles.
     range_axis = fig.add_axes([0.32, 0.030, 0.36, 0.060])
-    adaptive_button_ax = fig.add_axes([0, 0, 0.13, 0.035])
-    position_adaptive_button(fig, adaptive_button_ax)
-    adaptive_button = Button(
-        adaptive_button_ax,
-        "adaptive y: off",
-        color=BG_PAGE,
-        hovercolor=BG_PAGE,
+    adaptive_button, adaptive_button_background = create_toggle_button(
+        fig, ADAPTIVE_BUTTON_CENTER_X, "adaptive y", _state["adaptive_y"]
     )
-    adaptive_button_ax.set_facecolor(BG_PAGE)
-    for spine in adaptive_button_ax.spines.values():
-        spine.set_visible(False)
-    adaptive_button_background = FancyBboxPatch(
-        (0, 0),
-        1,
-        1,
-        boxstyle="round,pad=0.02,rounding_size=0.24",
-        linewidth=0,
-        facecolor=ADAPTIVE_BUTTON_OFF,
-        transform=adaptive_button_ax.transAxes,
-        zorder=1,
+    dark_mode_button, dark_mode_button_background = create_toggle_button(
+        fig, DARK_MODE_BUTTON_CENTER_X, "dark mode", _state["dark_mode"]
     )
-    adaptive_button_ax.add_patch(adaptive_button_background)
-    adaptive_button.label.set_fontsize(9.5)
-    adaptive_button.label.set_fontweight("bold")
-    adaptive_button.label.set_color(ADAPTIVE_BUTTON_TEXT_OFF)
-    adaptive_button.label.set_zorder(2)
 
     # Footer text at very bottom
     footer_text = fig.text(
         0.5, 0.008, "",
         ha="center", va="bottom",
-        fontsize=8, color="#607068", fontfamily="monospace",
+        fontsize=8, color=current_theme()["muted"], fontfamily="monospace",
     )
 
     draw(fig, box_axes, chart_axes, range_axis, footer_text)
@@ -559,13 +630,8 @@ def main() -> None:
 
     def _toggle_adaptive_y(_event):
         _state["adaptive_y"] = not _state["adaptive_y"]
-        enabled = _state["adaptive_y"]
-        adaptive_button.label.set_text(f"adaptive y: {'on' if enabled else 'off'}")
-        adaptive_button.label.set_color(
-            ADAPTIVE_BUTTON_TEXT_ON if enabled else ADAPTIVE_BUTTON_TEXT_OFF
-        )
-        adaptive_button_background.set_facecolor(
-            ADAPTIVE_BUTTON_ON if enabled else ADAPTIVE_BUTTON_OFF
+        style_toggle_button(
+            adaptive_button, adaptive_button_background, "adaptive y", _state["adaptive_y"]
         )
         for axis, series in zip(chart_axes, SERIES):
             set_y_axis(axis, series)
@@ -573,10 +639,50 @@ def main() -> None:
 
     adaptive_button.on_clicked(_toggle_adaptive_y)
 
-    def _keep_adaptive_button_size(_event):
-        position_adaptive_button(fig, adaptive_button_ax)
+    def _toggle_dark_mode(_event):
+        _state["dark_mode"] = not _state["dark_mode"]
+        if window_controls is not None:
+            window_controls.apply_theme(current_theme())
+        limits = [(axis.get_xlim(), axis.get_ylim()) for axis in chart_axes]
+        draw(
+            fig, box_axes, chart_axes, range_axis, footer_text,
+            preserve_view=_state["manual_view"],
+        )
+        for axis, (x_limits, y_limits) in zip(chart_axes, limits):
+            axis.set_xlim(x_limits)
+            axis.set_ylim(y_limits)
+        style_toggle_button(
+            adaptive_button, adaptive_button_background, "adaptive y", _state["adaptive_y"]
+        )
+        style_toggle_button(
+            dark_mode_button, dark_mode_button_background, "dark mode", _state["dark_mode"]
+        )
+        fig.canvas.draw_idle()
 
-    fig.canvas.mpl_connect("resize_event", _keep_adaptive_button_size)
+    dark_mode_button.on_clicked(_toggle_dark_mode)
+
+    def _layout_controls(_event=None):
+        adaptive_center = ADAPTIVE_BUTTON_CENTER_X
+        dark_mode_center = DARK_MODE_BUTTON_CENTER_X
+        if window_controls is not None:
+            spacing = (CONTROL_BUTTON_GAP_INCHES + TOGGLE_BUTTON_WIDTH_INCHES / 2)
+            dark_mode_center = max(
+                dark_mode_center,
+                window_controls.zoom_button_right() + spacing / fig.get_figwidth(),
+            )
+            adaptive_center = min(
+                adaptive_center,
+                window_controls.icon_buttons_left() - spacing / fig.get_figwidth(),
+            )
+        position_toggle_button(fig, adaptive_button.ax, adaptive_center)
+        position_toggle_button(fig, dark_mode_button.ax, dark_mode_center)
+
+        gs_outer.update(
+            bottom=CONTROL_ROW_TOP + X_AXIS_LABEL_SPACE_INCHES / fig.get_figheight()
+        )
+
+    _layout_controls()
+    fig.canvas.mpl_connect("resize_event", _layout_controls)
 
     def _remember_manual_view(event):
         if event.inaxes in chart_axes:
