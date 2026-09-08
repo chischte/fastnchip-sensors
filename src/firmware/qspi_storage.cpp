@@ -4,6 +4,8 @@
 #include <FATFileSystem.h>
 #include <MBRBlockDevice.h>
 #include <sys/stat.h>
+#include <hal/trng_api.h>
+#include <objects.h>
 
 #include "config.h"
 #include "firmware/measurement_json.h"
@@ -85,27 +87,49 @@ void QspiStorage::begin() {
 }
 
 uint32_t QspiStorage::nextBootId() {
-  uint32_t bootId = 0;
-  bool bootIdPersisted = false;
+  uint32_t previousBootId = 0;
   if (dataReady_) {
     FILE* file = fopen(BOOT_ID_PATH, "rb");
     if (file) {
-      fread(&bootId, sizeof(bootId), 1, file);
+      if (fread(&previousBootId, sizeof(previousBootId), 1, file) != 1) {
+        previousBootId = 0;
+      }
       fclose(file);
     }
+  }
 
-    ++bootId;
-    file = fopen(BOOT_ID_PATH, "wb");
+  // A restored/reset flash counter can reuse IDs already present in the logger.
+  trng_t randomSource;
+  uint32_t bootId = 0;
+  size_t randomBytes = 0;
+  trng_init(&randomSource);
+  const int randomResult = trng_get_bytes(
+      &randomSource, reinterpret_cast<uint8_t*>(&bootId), sizeof(bootId),
+      &randomBytes);
+  trng_free(&randomSource);
+  if (randomResult || randomBytes != sizeof(bootId) || !bootId ||
+      bootId == previousBootId) {
+    Serial.println("Boot ID entropy unavailable; using persisted fallback");
+    bootId = previousBootId ? previousBootId + 1 :
+        (static_cast<uint32_t>(micros()) ^ BOOT_ID_FALLBACK_MASK);
+    if (!bootId) {
+      bootId = BOOT_ID_FALLBACK_MASK;
+    }
+  }
+
+  if (dataReady_) {
+    FILE* file = fopen(BOOT_ID_PATH, "wb");
     if (file) {
-      bootIdPersisted = fwrite(&bootId, sizeof(bootId), 1, file) == 1;
+      if (fwrite(&bootId, sizeof(bootId), 1, file) != 1) {
+        Serial.println("Could not persist boot ID");
+      }
       fflush(file);
       fclose(file);
+    } else {
+      Serial.println("Could not open boot ID file");
     }
   }
-  if (bootId && bootIdPersisted) {
-    return bootId;
-  }
-  return static_cast<uint32_t>(micros()) ^ BOOT_ID_FALLBACK_MASK;
+  return bootId;
 }
 
 void QspiStorage::append(const Measurement& measurement, uint32_t bootId) {

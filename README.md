@@ -28,6 +28,9 @@ Andere IP: python logger/logger.py --url http://192.168.31.168
 Eine vorhandene measurements.csv wird einmalig nach measurements.db importiert.
 Danach wird der QSPI-Puffer nachgeholt und anhand von boot_id plus sequence
 duplikatfrei gespeichert.
+Die Firmware erzeugt pro Start eine Hardware-Zufallskennung, damit ein
+zurueckgesetzter Flash-Zaehler keine alten Messschluessel wiederverwendet.
+Falls die Zufallsquelle ausfaellt, dient die gespeicherte Kennung als Fallback.
 
 ## Firmware-Struktur
 
@@ -56,8 +59,24 @@ Sensorfehler werden als SQL NULL plus Validitaetsflag und RTD-Fehlercode
 gespeichert. Geraete-Uptime und Sequenznummer machen Neustarts und Luecken sichtbar.
 
 Der SCD41-ASC ist standardmaessig deaktiviert, da eine geschlossene Kammer nicht
-regelmaessig 400-ppm-Frischluft sieht. Hoehenwert und Temperaturoffset in config.h
-muessen am Einbauort kalibriert werden. Betrieb nur ohne Kondensation.
+regelmaessig 400-ppm-Frischluft sieht. Der SCD41-Temperaturoffset wird bei jeder
+Initialisierung aus config.h gesetzt und vom Sensor zur Kontrolle zurueckgelesen.
+Der Abgleich zum inneren PT100 verwendet: neuer Offset = bisheriger Offset
++ SCD41-Temperatur - PT100-Innentemperatur. Er setzt vergleichbare, stabile
+Temperaturen an beiden Messorten voraus. Der Hoehenwert steht in config.h.
+Betrieb nur ohne Kondensation.
+
+SQLite speichert die korrigierte SCD41-Temperatur separat als temp_scd_c und den
+zurueckgelesenen Offset als scd_temperature_offset_c. Alte Zeilen bleiben dort
+NULL. Viewer und Webansicht verwenden weiterhin ausschliesslich die PT100-Werte.
+
+Die PT100-Messung verwendet Dreileiterkompensation und einen 50-Hz-Netzfilter.
+configure_rtd_driver.py passt beim Build den fest auf Version 1.0.5 gesetzten
+Arduino-MAX31865-Treiber an: 50 Hz und 70 ms Wartezeit fuer Einzelmessungen
+(laut Datenblatt bis zu 66 ms). Die heruntergeladene Bibliothek bleibt unveraendert.
+Ein begrenzter Vergleich mit 60 Hz kann ueber RTD_DIAGNOSTIC_SAMPLES aktiviert
+werden (0 = aus). Die regulaeren Messwerte bleiben bei 50 Hz; zusaetzliche
+Vergleichswerte und ADC-Rohwerte stehen in der API und im QSPI-Protokoll.
 
 ## Persistenz und Backup
 

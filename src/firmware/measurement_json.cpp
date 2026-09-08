@@ -25,6 +25,22 @@ void appendMeasurementJson(String& json, const Measurement& measurement,
   json += ",\"outertemp\":" +
           nullableNumber(measurement.outerTemperature,
                          measurement.outerTemperatureValid);
+  json += ",\"scdtemp\":" + nullableNumber(measurement.scdTemperature,
+                                              measurement.co2Valid);
+  json += ",\"scd_offset\":" + nullableNumber(measurement.scdTemperatureOffset,
+                                                 measurement.co2Valid);
+  json += ",\"rtd_box_raw\":" + String(measurement.boxRaw);
+  json += ",\"rtd_outer_raw\":" + String(measurement.outerRaw);
+  if (measurement.rtdComparison) {
+    json += ",\"rtd_comparison\":{\"box_60hz\":" +
+        nullableNumber(measurement.boxTemperature60Hz, !measurement.boxFault60Hz);
+    json += ",\"outer_60hz\":" +
+        nullableNumber(measurement.outerTemperature60Hz, !measurement.outerFault60Hz);
+    json += ",\"box_raw_60hz\":" + String(measurement.boxRaw60Hz);
+    json += ",\"outer_raw_60hz\":" + String(measurement.outerRaw60Hz);
+    json += ",\"box_fault_60hz\":" + String(measurement.boxFault60Hz);
+    json += ",\"outer_fault_60hz\":" + String(measurement.outerFault60Hz) + "}";
+  }
   json += ",\"valid\":{\"co2\":";
   json += booleanJson(measurement.co2Valid);
   json += ",\"boxtemp\":";

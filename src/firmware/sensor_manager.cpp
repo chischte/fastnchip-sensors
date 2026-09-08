@@ -4,6 +4,7 @@
 #include <SensirionErrors.h>
 
 #include "config.h"
+#include "firmware/rtd_driver_diagnostics.h"
 #include "firmware/time_utils.h"
 
 namespace {
@@ -46,8 +47,29 @@ void SensorManager::read(Measurement& measurement, uint32_t now) {
   readScd(measurement, now);
   readRtd(Config::RTD_BOX_CHANNEL, measurement.boxTemperature,
           measurement.boxTemperatureValid, measurement.boxFault);
+  measurement.boxRaw = lastRtdRawCount();
   readRtd(Config::RTD_OUTER_CHANNEL, measurement.outerTemperature,
           measurement.outerTemperatureValid, measurement.outerFault);
+  measurement.outerRaw = lastRtdRawCount();
+  compareRtdFilters(measurement);
+}
+
+void SensorManager::compareRtdFilters(Measurement& measurement) {
+  if (measurement.sequence < Config::RTD_DIAGNOSTIC_FIRST_SEQUENCE ||
+      measurement.sequence >= Config::RTD_DIAGNOSTIC_FIRST_SEQUENCE +
+                                  Config::RTD_DIAGNOSTIC_SAMPLES) {
+    return;
+  }
+  measurement.rtdComparison = true;
+  setRtdFilter50Hz(false);
+  bool valid = false;
+  readRtd(Config::RTD_BOX_CHANNEL, measurement.boxTemperature60Hz,
+          valid, measurement.boxFault60Hz);
+  measurement.boxRaw60Hz = lastRtdRawCount();
+  readRtd(Config::RTD_OUTER_CHANNEL, measurement.outerTemperature60Hz,
+          valid, measurement.outerFault60Hz);
+  measurement.outerRaw60Hz = lastRtdRawCount();
+  setRtdFilter50Hz(true);
 }
 
 bool SensorManager::isReady() const {
@@ -94,6 +116,14 @@ void SensorManager::finishInitialization(uint32_t now) {
       Config::SCD41_TEMPERATURE_OFFSET_C);
   if (error) {
     printScdError("offset", error);
+    tryNextBus(now);
+    return;
+  }
+  error = scd4x_.getTemperatureOffset(scdTemperatureOffset_);
+  if (error) {
+    printScdError("read offset", error);
+    tryNextBus(now);
+    return;
   }
   error = scd4x_.setSensorAltitude(Config::SCD41_ALTITUDE_M);
   if (error) {
@@ -133,9 +163,8 @@ void SensorManager::readScd(Measurement& measurement, uint32_t now) {
 
   bool dataReady = false;
   int16_t error = scd4x_.getDataReadyStatus(dataReady);
-  float ignoredTemperature = NAN;
   if (!error && dataReady) {
-    error = scd4x_.readMeasurement(measurement.co2, ignoredTemperature,
+    error = scd4x_.readMeasurement(measurement.co2, measurement.scdTemperature,
                                    measurement.humidity);
   }
   if (error) {
@@ -147,6 +176,7 @@ void SensorManager::readScd(Measurement& measurement, uint32_t now) {
   }
 
   measurement.co2Valid = true;
+  measurement.scdTemperatureOffset = scdTemperatureOffset_;
   measurement.humidityValid = isfinite(measurement.humidity) &&
                               measurement.humidity >= Config::HUMIDITY_MIN_RH &&
                               measurement.humidity <= Config::HUMIDITY_MAX_RH;

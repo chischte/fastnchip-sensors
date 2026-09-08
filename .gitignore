@@ -14,3 +14,4 @@ logger/data/measurements.db-wal
 logger/data/backup.log
 logger/data/*.out.log
 logger/data/*.err.log
+logger/data/recovery/

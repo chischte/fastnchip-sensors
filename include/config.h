@@ -33,7 +33,11 @@ constexpr size_t HTTP_BYTES_PER_POLL = 2048;
 constexpr size_t HTTP_STREAM_BUFFER_BYTES = 512;
 
 // SCD41 installation settings. Adjust after calibration in the final enclosure.
-constexpr float SCD41_TEMPERATURE_OFFSET_C = 4.0f;
+// Matched to the inner PT100 on 2026-09-08 after startup settling.
+constexpr float SCD41_TEMPERATURE_OFFSET_C = 2.2f;
+// Temporary paired filter comparison, after SCD41 startup. Zero disables it.
+constexpr uint32_t RTD_DIAGNOSTIC_FIRST_SEQUENCE = 7;
+constexpr uint32_t RTD_DIAGNOSTIC_SAMPLES = 0;
 constexpr uint16_t SCD41_ALTITUDE_M = 450; // Site altitude; pressure input would override this.
 // Closed chambers normally do not see fresh 400 ppm air regularly, so ASC is disabled.
 constexpr bool SCD41_ASC_ENABLED = false;
@@ -41,6 +45,6 @@ constexpr bool SCD41_ASC_ENABLED = false;
 // QSPI append-only recovery buffer. The older file is retained across one rotation.
 constexpr size_t PERSISTENT_LOG_MAX_BYTES = 4U * 1024U * 1024U;
 constexpr size_t OTA_MAX_FILE_BYTES = 5U * 1024U * 1024U;
-constexpr const char* FIRMWARE_VERSION = "2.0.0";
+constexpr const char* FIRMWARE_VERSION = "2.0.4";
 
 }  // namespace Config

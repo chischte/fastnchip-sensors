@@ -1,4 +1,5 @@
 import importlib.util
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,5 +27,33 @@ class LoggerTests(unittest.TestCase):
         logger.insert(self.db, row)
         stored = self.db.execute("SELECT co2_ppm,temp_box_c,valid_co2,rtd_box_fault FROM measurements").fetchone()
         self.assertEqual((None, None, 0, 4), stored)
+
+    def test_scd_temperature_does_not_replace_pt100(self):
+        logger.insert(self.db, {"boot_id": 12, "sequence": 1,
+                               "boxtemp": 26.5, "scdtemp": 28.25,
+                               "scd_offset": 4.0})
+        stored = self.db.execute(
+            "SELECT temp_box_c,temp_scd_c,scd_temperature_offset_c FROM measurements"
+        ).fetchone()
+        self.assertEqual((26.5, 28.25, 4.0), stored)
+
+    def test_migrate_existing_database_preserves_old_rows(self):
+        path = Path(self.temp.name) / "legacy.db"
+        with sqlite3.connect(path) as legacy:
+            legacy.executescript(logger.SCHEMA)
+            legacy.execute("""INSERT INTO measurements
+                (received_at,boot_id,sequence,uptime_ms,temp_box_c,
+                 valid_co2,valid_box,valid_humidity,valid_outer)
+                VALUES ('2026-09-08',1,1,5000,25.5,0,1,0,0)""")
+        legacy.close()
+        for _ in range(2):
+            migrated = logger.connect(path)
+            try:
+                stored = migrated.execute(
+                    "SELECT temp_box_c,temp_scd_c,scd_temperature_offset_c FROM measurements"
+                ).fetchone()
+                self.assertEqual((25.5, None, None), stored)
+            finally:
+                migrated.close()
 if __name__ == "__main__":
     unittest.main()
