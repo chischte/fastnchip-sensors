@@ -37,6 +37,14 @@ class LoggerTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual((26.5, 28.25, 4.0), stored)
 
+    def test_sensor_identity_survives_a_swap(self):
+        for sequence, serial in enumerate(("000000000001", "000000000002"), 1):
+            logger.insert(self.db, {"boot_id": 12, "sequence": sequence,
+                                   "scd_serial": serial})
+        self.assertEqual(
+            [("000000000001",), ("000000000002",)],
+            self.db.execute("SELECT scd_serial FROM measurements ORDER BY sequence").fetchall())
+
     def test_migrate_existing_database_preserves_old_rows(self):
         path = Path(self.temp.name) / "legacy.db"
         with sqlite3.connect(path) as legacy:

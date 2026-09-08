@@ -37,6 +37,8 @@ class SensorManager {
   InitializationState initializationState_ = InitializationState::idle;
   uint32_t stateStartedAt_ = 0;
   uint32_t lastInitializationAt_ = 0;
+  uint32_t lastScdMeasurementAt_ = 0;
+  uint64_t scdSerialNumber_ = 0;
   uint16_t errorCount_ = 0;
   uint8_t busIndex_ = 0;
   bool ready_ = false;

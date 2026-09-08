@@ -17,7 +17,8 @@ constexpr uint32_t I2C_CLOCK_HZ = 100000;
 
 // Acquisition and recovery
 constexpr uint32_t MEASUREMENT_INTERVAL_MS = 5000;
-constexpr uint32_t SENSOR_RETRY_INTERVAL_MS = 30000;
+constexpr uint32_t SENSOR_RETRY_INTERVAL_MS = 5000;
+constexpr uint32_t SCD_MEASUREMENT_TIMEOUT_MS = 15000;
 constexpr uint32_t SCD_WAKE_DELAY_MS = 35;
 constexpr uint32_t SCD_STOP_DELAY_MS = 500;
 constexpr uint16_t SCD_MAX_CONSECUTIVE_ERRORS = 3;
@@ -45,6 +46,6 @@ constexpr bool SCD41_ASC_ENABLED = false;
 // QSPI append-only recovery buffer. The older file is retained across one rotation.
 constexpr size_t PERSISTENT_LOG_MAX_BYTES = 4U * 1024U * 1024U;
 constexpr size_t OTA_MAX_FILE_BYTES = 5U * 1024U * 1024U;
-constexpr const char* FIRMWARE_VERSION = "2.0.4";
+constexpr const char* FIRMWARE_VERSION = "2.0.5";
 
 }  // namespace Config

@@ -43,9 +43,11 @@ def connect(path: Path = DB_FILE) -> sqlite3.Connection:
 
 def _add_scd_columns(db: sqlite3.Connection) -> None:
     columns = {row[1] for row in db.execute("PRAGMA table_info(measurements)")}
-    for name in ("temp_scd_c", "scd_temperature_offset_c"):
+    additions = {"temp_scd_c": "REAL", "scd_temperature_offset_c": "REAL",
+                 "scd_serial": "TEXT"}
+    for name, column_type in additions.items():
         if name not in columns:
-            db.execute(f"ALTER TABLE measurements ADD COLUMN {name} REAL")
+            db.execute(f"ALTER TABLE measurements ADD COLUMN {name} {column_type}")
     db.commit()
 
 def fetch_json(url: str) -> dict:
@@ -72,6 +74,7 @@ def normalize(payload: dict) -> dict:
         "humidity_rh": record.get("humidity"), "temp_outer_c": record.get("outertemp"),
         "temp_scd_c": record.get("scdtemp"),
         "scd_temperature_offset_c": record.get("scd_offset"),
+        "scd_serial": record.get("scd_serial"),
         "valid_co2": int(valid.get("co2", record.get("co2") is not None)),
         "valid_box": int(valid.get("boxtemp", record.get("boxtemp") is not None)),
         "valid_humidity": int(valid.get("humidity", record.get("humidity") is not None)),

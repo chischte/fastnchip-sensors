@@ -32,6 +32,14 @@ Die Firmware erzeugt pro Start eine Hardware-Zufallskennung, damit ein
 zurueckgesetzter Flash-Zaehler keine alten Messschluessel wiederverwendet.
 Falls die Zufallsquelle ausfaellt, dient die gespeicherte Kennung als Fallback.
 
+SCD41 koennen einzeln am selben Anschluss ausgetauscht werden (feste Adresse
+0x62). Nach 15 Sekunden ohne gueltige Messung initialisiert die Firmware erneut
+und durchsucht Wire sowie Wire1. Ohne Sensor wird alle 5 Sekunden gesucht.
+Die Seriennummer steht als scd_serial in API und SQLite zur Zuordnung der
+Messwerte zum jeweiligen Exemplar. Beide erhalten denselben festen Offset
+aus config.h; eine automatische Temperaturanpassung findet nicht statt.
+Zwei SCD41 duerfen nicht gleichzeitig am selben I2C-Bus angeschlossen werden.
+
 ## Firmware-Struktur
 
 Die Firmware ist entlang ihrer Verantwortlichkeiten unterteilt:

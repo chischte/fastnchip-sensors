@@ -29,6 +29,16 @@ void appendMeasurementJson(String& json, const Measurement& measurement,
                                               measurement.co2Valid);
   json += ",\"scd_offset\":" + nullableNumber(measurement.scdTemperatureOffset,
                                                  measurement.co2Valid);
+  json += ",\"scd_serial\":";
+  if (measurement.co2Valid) {
+    char serial[13];
+    snprintf(serial, sizeof(serial), "%04lX%08lX",
+             static_cast<unsigned long>(measurement.scdSerialNumber >> 32),
+             static_cast<unsigned long>(measurement.scdSerialNumber & 0xFFFFFFFF));
+    json += "\"" + String(serial) + "\"";
+  } else {
+    json += "null";
+  }
   json += ",\"rtd_box_raw\":" + String(measurement.boxRaw);
   json += ",\"rtd_outer_raw\":" + String(measurement.outerRaw);
   if (measurement.rtdComparison) {

@@ -31,6 +31,12 @@ void SensorManager::begin(uint32_t now) {
 
 void SensorManager::poll(uint32_t now) {
   if (ready_) {
+    // A replacement can acknowledge I2C while still being in idle mode.
+    if (hasElapsed(now, lastScdMeasurementAt_,
+                   Config::SCD_MEASUREMENT_TIMEOUT_MS)) {
+      Serial.println("SCD4x measurement timeout; searching again");
+      startInitialization(PRIMARY_I2C_BUS, now);
+    }
     return;
   }
   if (initializationState_ != InitializationState::idle) {
@@ -81,6 +87,9 @@ uint16_t SensorManager::errorCount() const {
 }
 
 void SensorManager::startInitialization(uint8_t busIndex, uint32_t now) {
+  ready_ = false;
+  scdTemperatureOffset_ = NAN;
+  scdSerialNumber_ = 0;
   busIndex_ = busIndex;
   TwoWire& bus = busForIndex(busIndex_);
   bus.begin();
@@ -140,6 +149,8 @@ void SensorManager::finishInitialization(uint32_t now) {
   }
 
   ready_ = true;
+  lastScdMeasurementAt_ = now;
+  scdSerialNumber_ = serialNumber;
   errorCount_ = 0;
   initializationState_ = InitializationState::idle;
   Serial.print("SCD4x: ");
@@ -176,6 +187,8 @@ void SensorManager::readScd(Measurement& measurement, uint32_t now) {
   }
 
   measurement.co2Valid = true;
+  lastScdMeasurementAt_ = now;
+  measurement.scdSerialNumber = scdSerialNumber_;
   measurement.scdTemperatureOffset = scdTemperatureOffset_;
   measurement.humidityValid = isfinite(measurement.humidity) &&
                               measurement.humidity >= Config::HUMIDITY_MIN_RH &&
@@ -207,9 +220,7 @@ void SensorManager::recordScdError(const char* operation, int16_t error,
   if (errorCount_ < Config::SCD_MAX_CONSECUTIVE_ERRORS) {
     return;
   }
-  ready_ = false;
-  initializationState_ = InitializationState::idle;
-  lastInitializationAt_ = now;
+  startInitialization(PRIMARY_I2C_BUS, now);
 }
 
 TwoWire& SensorManager::busForIndex(uint8_t busIndex) {

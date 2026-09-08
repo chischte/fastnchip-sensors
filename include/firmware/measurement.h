@@ -11,6 +11,7 @@ struct Measurement {
   float humidity = NAN;
   float scdTemperature = NAN;
   float scdTemperatureOffset = NAN;
+  uint64_t scdSerialNumber = 0;
   uint16_t boxRaw = 0;
   uint16_t outerRaw = 0;
   float boxTemperature60Hz = NAN;
