@@ -82,9 +82,23 @@ Die PT100-Messung verwendet Dreileiterkompensation und einen 50-Hz-Netzfilter.
 configure_rtd_driver.py passt beim Build den fest auf Version 1.0.5 gesetzten
 Arduino-MAX31865-Treiber an: 50 Hz und 70 ms Wartezeit fuer Einzelmessungen
 (laut Datenblatt bis zu 66 ms). Die heruntergeladene Bibliothek bleibt unveraendert.
-Ein begrenzter Vergleich mit 60 Hz kann ueber RTD_DIAGNOSTIC_SAMPLES aktiviert
-werden (0 = aus). Die regulaeren Messwerte bleiben bei 50 Hz; zusaetzliche
-Vergleichswerte und ADC-Rohwerte stehen in der API und im QSPI-Protokoll.
+Vor jeder Messung werden Dreileitermodus und Filter neu gesetzt und zurueckgelesen;
+nach der Konversion wird die Konfiguration nochmals geprueft. So bleibt ein
+alleiniger MAX31865-Reset nicht dauerhaft als fehlende Leitungswiderstands-
+kompensation unentdeckt. Bei fehlgeschlagener Pruefung ist der Messwert ungueltig.
+API, QSPI und SQLite speichern ADC-Rohwerte, die Konfiguration vor/nach der
+Messung (`rtd_box_config_before/after`, `rtd_outer_config_before/after`) sowie
+`rtd_config_recoveries`, den kumulativen Zaehler der Korrekturversuche seit Start.
+Im Normalbetrieb ist die Konfiguration 17 (0x11: Dreileiter, 50 Hz, Bias aus).
+Die Pruefung stellt feste Hardwareeinstellungen wieder her; sie kalibriert
+keine Temperatur und veraendert den festen SCD41-Offset nicht.
+
+Ein begrenzter Vergleich kann ueber RTD_DIAGNOSTIC_SAMPLES aktiviert werden
+(0 = aus). RTD_DIAGNOSTIC_TWO_WIRE waehlt fehlende Dreileiterkompensation statt
+60 Hz als Vergleich. Regulaere Messwerte bleiben bei Dreileiter/50 Hz;
+Vergleichswerte stehen separat in API und QSPI. Absichtliche Moduswechsel
+erhoehen ebenfalls den Korrekturzaehler. Im normalen Build ist der Vergleich aus.
+Zum reproduzierten Temperatursprung siehe [Untersuchung vom 09.09.2026](docs/pt100-offset-2026-09-09.md).
 
 ## Persistenz und Backup
 

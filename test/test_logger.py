@@ -45,6 +45,15 @@ class LoggerTests(unittest.TestCase):
             [("000000000001",), ("000000000002",)],
             self.db.execute("SELECT scd_serial FROM measurements ORDER BY sequence").fetchall())
 
+    def test_rtd_configuration_recovery_is_recorded(self):
+        diagnostics = dict(zip(logger.RTD_DIAGNOSTIC_COLUMNS,
+                               (9000, 8978, 0, 17, 17, 17, 1)))
+        logger.insert(self.db, {"boot_id": 13, "sequence": 1, **diagnostics})
+        stored = self.db.execute(
+            "SELECT " + ",".join(logger.RTD_DIAGNOSTIC_COLUMNS) + " FROM measurements"
+        ).fetchone()
+        self.assertEqual(tuple(diagnostics.values()), stored)
+
     def test_migrate_existing_database_preserves_old_rows(self):
         path = Path(self.temp.name) / "legacy.db"
         with sqlite3.connect(path) as legacy:

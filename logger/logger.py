@@ -15,6 +15,10 @@ DB_FILE = BASE / "data" / "measurements.db"
 CSV_FILE = BASE / "data" / "measurements.csv"
 DEFAULT_URL = os.getenv("SENSOR_URL", "http://192.168.31.168")
 POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "5"))
+RTD_DIAGNOSTIC_COLUMNS = (
+    "rtd_box_raw", "rtd_outer_raw", "rtd_box_config_before", "rtd_box_config_after",
+    "rtd_outer_config_before", "rtd_outer_config_after", "rtd_config_recoveries",
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS measurements(
@@ -35,16 +39,17 @@ def connect(path: Path = DB_FILE) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=10)
     db.executescript(SCHEMA)
-    _add_scd_columns(db)
+    _add_sensor_columns(db)
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=NORMAL")
     return db
 
 
-def _add_scd_columns(db: sqlite3.Connection) -> None:
+def _add_sensor_columns(db: sqlite3.Connection) -> None:
     columns = {row[1] for row in db.execute("PRAGMA table_info(measurements)")}
     additions = {"temp_scd_c": "REAL", "scd_temperature_offset_c": "REAL",
                  "scd_serial": "TEXT"}
+    additions.update({name: "INTEGER" for name in RTD_DIAGNOSTIC_COLUMNS})
     for name, column_type in additions.items():
         if name not in columns:
             db.execute(f"ALTER TABLE measurements ADD COLUMN {name} {column_type}")
@@ -75,6 +80,7 @@ def normalize(payload: dict) -> dict:
         "temp_scd_c": record.get("scdtemp"),
         "scd_temperature_offset_c": record.get("scd_offset"),
         "scd_serial": record.get("scd_serial"),
+        **{name: record.get(name) for name in RTD_DIAGNOSTIC_COLUMNS},
         "valid_co2": int(valid.get("co2", record.get("co2") is not None)),
         "valid_box": int(valid.get("boxtemp", record.get("boxtemp") is not None)),
         "valid_humidity": int(valid.get("humidity", record.get("humidity") is not None)),

@@ -41,15 +41,21 @@ void appendMeasurementJson(String& json, const Measurement& measurement,
   }
   json += ",\"rtd_box_raw\":" + String(measurement.boxRaw);
   json += ",\"rtd_outer_raw\":" + String(measurement.outerRaw);
+  json += ",\"rtd_box_config_before\":" + String(measurement.boxDiagnostics.configBefore);
+  json += ",\"rtd_box_config_after\":" + String(measurement.boxDiagnostics.configAfter);
+  json += ",\"rtd_outer_config_before\":" + String(measurement.outerDiagnostics.configBefore);
+  json += ",\"rtd_outer_config_after\":" + String(measurement.outerDiagnostics.configAfter);
+  json += ",\"rtd_config_recoveries\":" + String(measurement.outerDiagnostics.recoveries);
   if (measurement.rtdComparison) {
-    json += ",\"rtd_comparison\":{\"box_60hz\":" +
-        nullableNumber(measurement.boxTemperature60Hz, !measurement.boxFault60Hz);
-    json += ",\"outer_60hz\":" +
-        nullableNumber(measurement.outerTemperature60Hz, !measurement.outerFault60Hz);
-    json += ",\"box_raw_60hz\":" + String(measurement.boxRaw60Hz);
-    json += ",\"outer_raw_60hz\":" + String(measurement.outerRaw60Hz);
-    json += ",\"box_fault_60hz\":" + String(measurement.boxFault60Hz);
-    json += ",\"outer_fault_60hz\":" + String(measurement.outerFault60Hz) + "}";
+    const String suffix = measurement.rtdComparisonTwoWire ? "_2wire" : "_60hz";
+    json += ",\"rtd_comparison\":{\"box" + suffix + "\":" +
+        nullableNumber(measurement.boxComparisonTemperature, !measurement.boxComparisonFault);
+    json += ",\"outer" + suffix + "\":" +
+        nullableNumber(measurement.outerComparisonTemperature, !measurement.outerComparisonFault);
+    json += ",\"box_raw" + suffix + "\":" + String(measurement.boxComparisonRaw);
+    json += ",\"outer_raw" + suffix + "\":" + String(measurement.outerComparisonRaw);
+    json += ",\"box_fault" + suffix + "\":" + String(measurement.boxComparisonFault);
+    json += ",\"outer_fault" + suffix + "\":" + String(measurement.outerComparisonFault) + "}";
   }
   json += ",\"valid\":{\"co2\":";
   json += booleanJson(measurement.co2Valid);

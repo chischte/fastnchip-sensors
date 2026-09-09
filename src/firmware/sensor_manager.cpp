@@ -54,28 +54,36 @@ void SensorManager::read(Measurement& measurement, uint32_t now) {
   readRtd(Config::RTD_BOX_CHANNEL, measurement.boxTemperature,
           measurement.boxTemperatureValid, measurement.boxFault);
   measurement.boxRaw = lastRtdRawCount();
+  measurement.boxDiagnostics = lastRtdDiagnostics();
   readRtd(Config::RTD_OUTER_CHANNEL, measurement.outerTemperature,
           measurement.outerTemperatureValid, measurement.outerFault);
   measurement.outerRaw = lastRtdRawCount();
-  compareRtdFilters(measurement);
+  measurement.outerDiagnostics = lastRtdDiagnostics();
+  compareRtdModes(measurement);
 }
 
-void SensorManager::compareRtdFilters(Measurement& measurement) {
+void SensorManager::compareRtdModes(Measurement& measurement) {
   if (measurement.sequence < Config::RTD_DIAGNOSTIC_FIRST_SEQUENCE ||
       measurement.sequence >= Config::RTD_DIAGNOSTIC_FIRST_SEQUENCE +
                                   Config::RTD_DIAGNOSTIC_SAMPLES) {
     return;
   }
   measurement.rtdComparison = true;
-  setRtdFilter50Hz(false);
+  measurement.rtdComparisonTwoWire = Config::RTD_DIAGNOSTIC_TWO_WIRE;
+  if (measurement.rtdComparisonTwoWire) {
+    setRtdLeadCompensation(false);
+  } else {
+    setRtdFilter50Hz(false);
+  }
   bool valid = false;
-  readRtd(Config::RTD_BOX_CHANNEL, measurement.boxTemperature60Hz,
-          valid, measurement.boxFault60Hz);
-  measurement.boxRaw60Hz = lastRtdRawCount();
-  readRtd(Config::RTD_OUTER_CHANNEL, measurement.outerTemperature60Hz,
-          valid, measurement.outerFault60Hz);
-  measurement.outerRaw60Hz = lastRtdRawCount();
+  readRtd(Config::RTD_BOX_CHANNEL, measurement.boxComparisonTemperature,
+          valid, measurement.boxComparisonFault);
+  measurement.boxComparisonRaw = lastRtdRawCount();
+  readRtd(Config::RTD_OUTER_CHANNEL, measurement.outerComparisonTemperature,
+          valid, measurement.outerComparisonFault);
+  measurement.outerComparisonRaw = lastRtdRawCount();
   setRtdFilter50Hz(true);
+  setRtdLeadCompensation(true);
 }
 
 bool SensorManager::isReady() const {
@@ -202,7 +210,7 @@ void SensorManager::readRtd(uint8_t channel, float& value, bool& valid,
   value = MachineControl_RTDTempProbe.readTemperature(
       Config::RTD_NOMINAL_OHMS, Config::RTD_REFERENCE_OHMS);
   fault = MachineControl_RTDTempProbe.readFault();
-  valid = !fault && isfinite(value) &&
+  valid = !fault && lastRtdDiagnostics().configurationValid && isfinite(value) &&
           value >= Config::RTD_MIN_TEMPERATURE_C &&
           value <= Config::RTD_MAX_TEMPERATURE_C;
   if (fault) {

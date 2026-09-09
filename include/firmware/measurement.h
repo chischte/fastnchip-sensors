@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "firmware/rtd_driver_diagnostics.h"
 
 struct Measurement {
   uint32_t sequence = 0;
@@ -14,12 +15,15 @@ struct Measurement {
   uint64_t scdSerialNumber = 0;
   uint16_t boxRaw = 0;
   uint16_t outerRaw = 0;
-  float boxTemperature60Hz = NAN;
-  float outerTemperature60Hz = NAN;
-  uint16_t boxRaw60Hz = 0;
-  uint16_t outerRaw60Hz = 0;
-  uint8_t boxFault60Hz = 0;
-  uint8_t outerFault60Hz = 0;
+  RtdDriverDiagnostics boxDiagnostics;
+  RtdDriverDiagnostics outerDiagnostics;
+  bool rtdComparisonTwoWire = false;
+  float boxComparisonTemperature = NAN;
+  float outerComparisonTemperature = NAN;
+  uint16_t boxComparisonRaw = 0;
+  uint16_t outerComparisonRaw = 0;
+  uint8_t boxComparisonFault = 0;
+  uint8_t outerComparisonFault = 0;
   bool rtdComparison = false;
   uint8_t boxFault = 0;
   uint8_t outerFault = 0;

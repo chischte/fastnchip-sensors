@@ -28,7 +28,7 @@ class SensorManager {
   void tryNextBus(uint32_t now);
   void readScd(Measurement& measurement, uint32_t now);
   void readRtd(uint8_t channel, float& value, bool& valid, uint8_t& fault);
-  void compareRtdFilters(Measurement& measurement);
+  void compareRtdModes(Measurement& measurement);
   void recordScdError(const char* operation, int16_t error, uint32_t now);
   TwoWire& busForIndex(uint8_t busIndex);
   const char* busName(uint8_t busIndex) const;

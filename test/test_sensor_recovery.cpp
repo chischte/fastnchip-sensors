@@ -6,7 +6,9 @@ extern "C" { int _fltused = 0; }
 #include "firmware/sensor_manager.h"
 
 void setRtdFilter50Hz(bool) {}
+void setRtdLeadCompensation(bool) {}
 uint16_t lastRtdRawCount() { return 9000; }
+RtdDriverDiagnostics lastRtdDiagnostics() { return {0x11, 0x11, true, 0}; }
 
 void finishInitialization(SensorManager& sensor, uint32_t started) {
   sensor.poll(started + Config::SCD_WAKE_DELAY_MS);
